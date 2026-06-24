@@ -1,0 +1,976 @@
+---
+export const prerender = false
+import { createServerClient, parseCookieHeader } from '@supabase/ssr'
+import { getBusinessStatus } from '../../lib/schedule'
+
+const supabase = createServerClient(
+  import.meta.env.PUBLIC_SUPABASE_URL,
+  import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+  {
+    cookies: {
+      getAll() { return parseCookieHeader(Astro.request.headers.get('Cookie') ?? '') },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => Astro.cookies.set(name, value, options))
+      },
+    },
+  }
+)
+
+const { data: { user } } = await supabase.auth.getUser()
+if (!user) return Astro.redirect('/login')
+
+const { data: business } = await supabase
+  .from('businesses').select('*').eq('owner_id', user.id).single()
+if (!business) return Astro.redirect('/login')
+
+// Estado real combinando horario configurado + Modo Pausa manual.
+// 'open' | 'open-no-schedule' | 'closed-schedule' | 'closed-manual'
+const businessStatus = getBusinessStatus(business.open_time, business.close_time, business.is_open)
+const isOpenNow = businessStatus === 'open' || businessStatus === 'open-no-schedule'
+
+// ← Pago pendiente a Fogón (no confundir con el cobro del negocio
+// a SUS clientes). Estos datos son tuyos, Lucía — van en variables
+// de entorno porque no son del negocio, son de Fogón.
+const ownerClabe = import.meta.env.FOGON_OWNER_CLABE ?? ''
+const ownerPhone = import.meta.env.FOGON_OWNER_PHONE ?? ''
+const ownerBankName = import.meta.env.FOGON_OWNER_BANK_NAME ?? ''
+
+const { data: orders } = await supabase
+  .from('orders').select('*').eq('business_id', business.id)
+  .order('created_at', { ascending: false }).limit(50)
+
+const today = new Date().toDateString()
+const todayOrders  = (orders ?? []).filter(o => new Date(o.created_at).toDateString() === today)
+const pendingOrders = (orders ?? []).filter(o => o.status === 'pending')
+const todaySales   = todayOrders.reduce((s, o) => s + Number(o.total), 0)
+
+const statusLabel = { pending:'Pendiente', confirmed:'Confirmado', ready:'Listo', delivered:'Entregado', cancelled:'Cancelado' }
+const statusColor = { pending:'#B04030', confirmed:'#60a5fa', ready:'#4ade80', delivered:'#6B7280', cancelled:'#f87171' }
+const statusBg    = { pending:'rgba(176,64,48,0.12)', confirmed:'rgba(96,165,250,0.1)', ready:'rgba(74,222,128,0.1)', delivered:'rgba(107,114,128,0.1)', cancelled:'rgba(248,113,113,0.1)' }
+
+const formatPrice = (n) => new Intl.NumberFormat('es-MX', { style:'currency', currency:'MXN' }).format(n)
+const formatTime  = (ts) => new Date(ts).toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' })
+const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase()
+---
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — {business.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style is:global>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-deep:        #050204;
+      --bg-body:        #0A0608;
+      --bg-surface:     #140A10;
+      --bg-hover:       #1C1018;
+      --text-1:         #FAF6F0;
+      --text-2:         #C4A882;
+      --text-3:         #7A5840;
+      --accent:         #B04030;
+      --accent-dim:     rgba(176,64,48,0.12);
+      --accent-border:  rgba(176,64,48,0.28);
+      --border:         rgba(250,246,240,0.07);
+      --danger:         #f87171;
+      --danger-dim:     rgba(248,113,113,0.1);
+      --danger-border:  rgba(248,113,113,0.25);
+      --success:        #4ade80;
+    }
+    body { background: var(--bg-body); color: var(--text-1); font-family: 'Inter', sans-serif; min-height: 100vh; font-size: 16px; }
+
+    /* Brasas */
+    .embers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+    .ember {
+      position: absolute; border-radius: 50%;
+      background: var(--accent); opacity: 0; bottom: -5px;
+      box-shadow: 0 0 6px 2px rgba(176,64,48,0.4);
+      animation: ember-rise linear infinite;
+    }
+    @keyframes ember-rise {
+      0%   { opacity: 0; transform: translateY(0) translateX(0) scale(0.5); }
+      10%  { opacity: 0.7; }
+      70%  { opacity: 0.45; }
+      100% { opacity: 0; transform: translateY(-80vh) translateX(var(--drift)) scale(1.2); }
+    }
+
+    /* Topbar */
+    .topbar {
+      background: var(--bg-deep); border-bottom: 1px solid var(--accent-border);
+      padding: 0 24px; display: flex; align-items: center;
+      justify-content: space-between; height: 64px;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 14px; }
+    .logo-sm {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: var(--accent-dim); border: 1px solid var(--accent-border);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Cormorant Garamond', serif; font-size: 15px;
+      font-weight: 700; color: var(--accent); overflow: hidden;
+    }
+    .logo-sm img { width: 100%; height: 100%; object-fit: cover; }
+    .biz-name { font-family: 'Cormorant Garamond', serif; font-size: 19px; font-weight: 700; color: var(--text-1); }
+    .biz-sub  { font-size: 12px; color: var(--text-3); text-transform: uppercase; letter-spacing: 1.2px; margin-top: 1px; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .open-toggle {
+      padding: 6px 14px; border-radius: 999px; border: none;
+      cursor: pointer; font-size: 13px; font-weight: 700;
+      font-family: 'Inter', sans-serif;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .topbar-link { font-size: 13px; color: var(--text-3); text-decoration: none; font-weight: 500; }
+    .topbar-link:hover { color: var(--text-2); }
+    .logout-btn {
+      background: none; border: none; color: var(--text-3);
+      cursor: pointer; font-size: 13px; font-family: 'Inter', sans-serif;
+    }
+    .logout-btn:hover { color: var(--text-2); }
+
+    /* Modo Pausa Rápido */
+    .pending-payment-banner{
+      background:var(--danger-dim);border-bottom:1px solid var(--danger-border);
+      padding:16px 24px;
+    }
+    .pending-title{font-size:14px;font-weight:700;color:var(--danger);font-family:'Inter',sans-serif;max-width:960px;margin:0 auto 6px}
+    .pending-text{font-size:13px;color:var(--text-2);font-family:'Inter',sans-serif;max-width:960px;margin:0 auto;line-height:1.6}
+    .pending-text a{color:var(--accent);text-decoration:underline}
+    .pending-pay-info{
+      display:flex;gap:20px;flex-wrap:wrap;max-width:960px;margin:10px auto 0;
+      font-size:13px;color:var(--text-1);font-family:'Inter',sans-serif;
+    }
+    .pending-pay-info strong{color:var(--text-3);font-weight:600;margin-right:4px}
+
+    .pause-bar {
+      display: none;
+      background: var(--danger-dim);
+      border-bottom: 1px solid var(--danger-border);
+      padding: 12px 24px;
+      position: sticky;
+      top: 64px;
+      z-index: 9;
+    }
+    .pause-bar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .pause-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pause-bar-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--danger);
+      font-family: 'Inter', sans-serif;
+    }
+    .pause-bar-timer {
+      font-size: 12px;
+      color: var(--text-3);
+      font-family: 'Inter', sans-serif;
+    }
+    .resume-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent);
+      color: var(--cream);
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      transition: opacity 0.15s;
+    }
+    .resume-btn:hover { opacity: 0.9; }
+
+    /* Quick Pause Buttons */
+    .quick-pause {
+      padding: 16px 24px 0;
+      max-width: 960px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+    .quick-pause-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pause-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(248, 113, 113, 0.08);
+      color: var(--danger);
+      border: 1px solid var(--danger-border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.15s;
+    }
+    .pause-btn:hover { background: rgba(248, 113, 113, 0.15); }
+    .pause-btn-danger { background: rgba(248, 113, 113, 0.12); }
+
+    /* Nav */
+    .dash-nav {
+      background: var(--bg-deep); border-bottom: 1px solid var(--border);
+      padding: 0 24px; display: flex; gap: 4px;
+    }
+    .dash-nav a {
+      display: inline-block; padding: 14px 16px;
+      font-size: 15px; font-weight: 500; color: var(--text-2);
+      text-decoration: none; border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .dash-nav a.active, .dash-nav a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Stats */
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(3,1fr);
+      gap: 12px; padding: 24px; max-width: 960px; margin: 0 auto;
+      position: relative; z-index: 1;
+    }
+    .stat-card {
+      background: var(--bg-surface); border-radius: 14px;
+      padding: 20px 22px; border: 1px solid var(--border);
+    }
+    .stat-label {
+      font-size: 12px; font-weight: 700; color: var(--text-3);
+      text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px;
+    }
+    .stat-value {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 36px; font-weight: 700; color: var(--accent);
+    }
+
+    /* Pedidos */
+    .orders-section { padding: 0 24px 48px; max-width: 960px; margin: 0 auto; position: relative; z-index: 1; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .section-title { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 700; color: var(--text-1); }
+    .live-badge { font-size: 13px; color: #4ade80; display: flex; align-items: center; gap: 6px; font-weight: 600; }
+    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    .orders-list { display: flex; flex-direction: column; gap: 10px; }
+
+    /* Card pedido */
+    .order-card {
+      background: var(--bg-surface); border-radius: 14px;
+      overflow: hidden; border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+    }
+    .order-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px 0;
+    }
+    .order-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .order-id   { font-size: 13px; font-weight: 700; color: var(--text-3); letter-spacing: 0.5px; }
+    .order-badge {
+      font-size: 12px; font-weight: 700; padding: 3px 10px;
+      border-radius: 999px; letter-spacing: 0.3px;
+    }
+    .order-time  { font-size: 13px; color: var(--text-3); }
+    .order-total { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 700; color: var(--text-1); }
+
+    .order-body { padding: 10px 18px 14px; }
+    .order-name { font-size: 16px; font-weight: 600; color: var(--text-1); margin-bottom: 4px; }
+    .order-info { font-size: 14px; color: var(--text-2); margin-bottom: 10px; }
+
+    .order-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 18px; border-radius: 8px; border: 1px solid;
+      cursor: pointer; font-size: 14px; font-weight: 600;
+      font-family: 'Inter', sans-serif; transition: opacity 0.15s;
+    }
+    .action-btn:hover { opacity: 0.8; }
+    .action-btn.sm { padding: 8px 14px; }
+
+    /* Vacío */
+    .empty-orders { text-align: center; padding: 60px 24px; }
+    .empty-icon-dash { font-size: 42px; margin-bottom: 14px; }
+    .empty-dash-title { font-family: 'Cormorant Garamond', serif; font-size: 20px; color: var(--text-3); }
+
+    /* Notificaciones */
+    .notif-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 12px;
+      color: var(--text-3);
+      cursor: pointer;
+      font-size: 13px;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.15s;
+    }
+    .notif-btn:hover {
+      border-color: var(--accent-border);
+      color: var(--text-2);
+    }
+
+    /* ═══════════════════════════════════════════════════════ */
+    /* ANIMACIONES INANNA */
+    /* ═══════════════════════════════════════════════════════ */
+
+    @keyframes slideUpFade {
+      from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.98);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .order-card-enter {
+      animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes pendingPulse {
+      0%, 100% { 
+        border-left-color: var(--accent);
+        box-shadow: 0 0 0 0 rgba(176, 64, 48, 0.1);
+      }
+      50% { 
+        border-left-color: #c44a3a;
+        box-shadow: 0 0 0 4px rgba(176, 64, 48, 0);
+      }
+    }
+
+    .order-card-pending {
+      animation: pendingPulse 3s ease-in-out infinite;
+    }
+
+    .btn-ripple {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-ripple::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      transition: width 0.3s, height 0.3s;
+    }
+
+    .btn-ripple:active::after {
+      width: 200%;
+      height: 200%;
+    }
+
+    @keyframes emberPulse {
+      0%, 100% {
+        filter: drop-shadow(0 0 2px rgba(176, 64, 48, 0.3));
+        transform: scale(1);
+      }
+      50% {
+        filter: drop-shadow(0 0 6px rgba(176, 64, 48, 0.5));
+        transform: scale(1.02);
+      }
+    }
+
+    .logo-ember {
+      animation: emberPulse 2s ease-in-out infinite;
+    }
+
+    .icon-inline {
+      display: inline-block;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <div class="embers" aria-hidden="true">
+    <span class="ember" style="left:5%;width:5px;height:5px;animation-duration:7s;animation-delay:0s;--drift:20px"></span>
+    <span class="ember" style="left:25%;width:4px;height:4px;animation-duration:10s;animation-delay:1.5s;--drift:-18px"></span>
+    <span class="ember" style="left:55%;width:5px;height:5px;animation-duration:9s;animation-delay:0.8s;--drift:22px"></span>
+    <span class="ember" style="left:80%;width:4px;height:4px;animation-duration:11s;animation-delay:2.2s;--drift:-14px"></span>
+  </div>
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo-sm">
+        {business.logo_url ? <img src={business.logo_url} alt="" /> : initials}
+      </div>
+      <div>
+        <p class="biz-name">{business.name}</p>
+        <p class="biz-sub">Panel de pedidos</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button id="notif-btn" onclick="initNotifications()" class="notif-btn btn-ripple">
+        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        Notificaciones
+      </button>
+      <button id="toggle-open" class="open-toggle btn-ripple" onclick="toggleOpen()"
+        style={businessStatus === 'closed-manual'
+          ? 'background:rgba(250,246,240,0.05);color:var(--text-3);border:1px solid var(--border)'
+          : isOpenNow
+            ? 'background:rgba(74,222,128,0.1);color:#4ade80;border:1px solid rgba(74,222,128,0.25)'
+            : 'background:rgba(176,64,48,0.08);color:#C4A882;border:1px solid rgba(176,64,48,0.2)'}>
+        {businessStatus === 'closed-manual' ? '○ Cerrado' : isOpenNow ? <>
+          <svg class="icon-inline logo-ember" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2c0 0-3 4-3 9 0 2.5 1.5 4 3 5 1.5-1 3-2.5 3-5 0-5-3-9-3-9z" fill="currentColor" opacity="0.9"/>
+            <path d="M8 14c0 3 2 5 4 6 2-1 4-3 4-6 0-2-1-3.5-2-4.5" fill="none"/>
+          </svg>
+          Abierto
+        </> : '🕒 Cerrado (horario)'}
+      </button>
+      <a href={`/${business.slug}`} target="_blank" class="topbar-link">Ver tienda ↗</a>
+      <button class="logout-btn btn-ripple" onclick="handleLogout()">Salir</button>
+    </div>
+  </header>
+
+  {business.subscription_status !== 'active' && (
+    <div class="pending-payment-banner">
+      <p class="pending-title">⏳ Tu cuenta está pendiente de activación</p>
+      <p class="pending-text">
+        Tu tienda pública todavía no es visible para tus clientes. En cuanto recibamos tu pago de instalación
+        ($5,000 MXN, incluye tu primer mes), la activamos. Mientras tanto, puedes dejar todo listo en
+        <a href="/dashboard/menu">tu menú</a>.
+      </p>
+      {(ownerClabe || ownerPhone) && (
+        <div class="pending-pay-info">
+          {ownerClabe && <span><strong>CLABE:</strong> {ownerClabe}</span>}
+          {ownerPhone && <span><strong>DiMo:</strong> {ownerPhone}</span>}
+          {ownerBankName && <span><strong>Banco:</strong> {ownerBankName}</span>}
+        </div>
+      )}
+    </div>
+  )}
+
+  <!-- Modo Pausa Rápido -->
+  <div class="pause-bar" id="pause-bar">
+    <div class="pause-bar-inner">
+      <div class="pause-bar-left">
+        <svg class="icon-inline logo-ember" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
+          <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
+        </svg>
+        <div>
+          <p class="pause-bar-title">Pedidos pausados</p>
+          <p class="pause-bar-timer" id="pause-timer">Pausado manualmente</p>
+        </div>
+      </div>
+      <button class="resume-btn btn-ripple" onclick="resumeOrders()">
+        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/>
+        </svg>
+        Reanudar
+      </button>
+    </div>
+  </div>
+
+  <!-- Botones de pausa rápida -->
+  <div class="quick-pause" id="quick-pause" style={business.is_open ? '' : 'display:none;'}>
+    <div class="quick-pause-row">
+      <button onclick="pauseOrders(15)" class="pause-btn btn-ripple">
+        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
+          <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
+        </svg>
+        15 min
+      </button>
+      <button onclick="pauseOrders(30)" class="pause-btn btn-ripple">
+        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
+          <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
+        </svg>
+        30 min
+      </button>
+      <button onclick="pauseOrders(60)" class="pause-btn btn-ripple">
+        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
+          <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
+        </svg>
+        1 hora
+      </button>
+      <button onclick="pauseOrders(0)" class="pause-btn pause-btn-danger btn-ripple">
+        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/>
+          <rect x="8" y="8" width="8" height="8" rx="1" fill="var(--bg-deep)" stroke="none"/>
+        </svg>
+        Cerrar hasta mañana
+      </button>
+    </div>
+  </div>
+
+  <nav class="dash-nav">
+    <a href="/dashboard" class="active">Pedidos</a>
+    <a href="/dashboard/menu">Menú</a>
+    <a href="/dashboard/reportes">Reportes</a>
+  </nav>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <p class="stat-label">Pedidos hoy</p>
+      <p class="stat-value">{todayOrders.length}</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-label">Pendientes</p>
+      <p class="stat-value" style={pendingOrders.length > 0 ? 'color:var(--accent)' : 'color:var(--text-3)'}>{pendingOrders.length}</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-label">Venta hoy</p>
+      <p class="stat-value" style="font-size:26px">{formatPrice(todaySales)}</p>
+    </div>
+  </div>
+
+  <div class="orders-section">
+    <div class="section-header">
+      <h2 class="section-title">Pedidos recientes</h2>
+      <span class="live-badge"><span class="live-dot"></span>En vivo</span>
+    </div>
+
+    <div class="orders-list" id="orders-list">
+      {(orders ?? []).length === 0 && (
+        <div class="empty-orders">
+          <div class="empty-icon-dash">🔥</div>
+          <p class="empty-dash-title">Los pedidos aparecerán aquí</p>
+        </div>
+      )}
+
+      {(orders ?? []).map(order => (
+        <div class="order-card" id={`order-${order.id}`} style={`border-left-color:${statusColor[order.status]}`}>
+          <div class="order-head">
+            <div class="order-meta">
+              <span class="order-id">#{order.id.slice(-6).toUpperCase()}</span>
+              <span class="order-badge" style={`background:${statusBg[order.status]};color:${statusColor[order.status]}`}>
+                {statusLabel[order.status]}
+              </span>
+              <span class="order-time">{formatTime(order.created_at)}</span>
+            </div>
+            <span class="order-total">{formatPrice(order.total)}</span>
+          </div>
+          <div class="order-body">
+            <p class="order-name">{order.customer_name}</p>
+            <p class="order-info">
+              {order.customer_phone && `${order.customer_phone} · `}
+              {order.order_type === 'pickup' ? 
+                <span style="display:inline-flex;align-items:center;gap:4px;">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                  </svg>
+                  Recoger
+                </span> : 
+                <span style="display:inline-flex;align-items:center;gap:4px;">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="1" y="3" width="15" height="13"/>
+                    <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/>
+                    <circle cx="5.5" cy="18.5" r="2.5"/>
+                    <circle cx="18.5" cy="18.5" r="2.5"/>
+                  </svg>
+                  Domicilio
+                </span>
+              }
+              {order.payment_method === 'transfer' && <span style="color:#B04030;font-weight:600"> · 🏦 Transferencia</span>}
+              {order.notes && ` · 📝 ${order.notes}`}
+            </p>
+            <div class="order-actions" id={`actions-${order.id}`}>
+              {order.status === 'pending' && (<>
+                <button class="action-btn btn-ripple" onclick={`updateStatus('${order.id}','confirmed')`}
+                  style="background:rgba(176,64,48,0.1);color:#B04030;border-color:rgba(176,64,48,0.28)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                  Confirmar
+                </button>
+                <button class="action-btn sm btn-ripple" onclick={`updateStatus('${order.id}','cancelled')`}
+                  style="background:rgba(248,113,113,0.08);color:#f87171;border-color:rgba(248,113,113,0.2)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                  Cancelar
+                </button>
+              </>)}
+              {order.status === 'confirmed' && (<>
+                <button class="action-btn btn-ripple" onclick={`updateStatus('${order.id}','ready')`}
+                  style="background:rgba(96,165,250,0.08);color:#60a5fa;border-color:rgba(96,165,250,0.2)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                  Marcar listo
+                </button>
+                <button class="action-btn sm btn-ripple" onclick={`updateStatus('${order.id}','cancelled')`}
+                  style="background:rgba(248,113,113,0.08);color:#f87171;border-color:rgba(248,113,113,0.2)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                  Cancelar
+                </button>
+              </>)}
+              {order.status === 'ready' && (
+                <button class="action-btn btn-ripple" onclick={`updateStatus('${order.id}','delivered')`}
+                  style="background:rgba(74,222,128,0.08);color:#4ade80;border-color:rgba(74,222,128,0.2)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                  Entregado
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <div id="dash-config" data-business-id={business.id} data-is-open={String(business.is_open)}
+    data-open-time={business.open_time ?? ''} data-close-time={business.close_time ?? ''} hidden />
+</body>
+
+<script>
+  import { createBrowserClient } from '@supabase/ssr'
+  import { isBusinessOpen } from '../../lib/schedule'
+
+  const sb = createBrowserClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.PUBLIC_SUPABASE_ANON_KEY
+  )
+
+  const config = document.getElementById('dash-config')
+  const businessId = config.dataset.businessId
+  let isOpen = config.dataset.isOpen === 'true' // bandera manual (Modo Pausa)
+  const openTime = config.dataset.openTime || null
+  const closeTime = config.dataset.closeTime || null
+  let audioCtx = null
+  document.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+  }, { once: true })
+
+  // ── Badge Abierto / Cerrado por horario / Pausado ─────────
+  // Única función que decide qué se ve en el botón. Así nunca
+  // se desincroniza el texto del color ni del horario real.
+  function renderStatusBadge() {
+    const btn = document.getElementById('toggle-open')
+    if (!btn) return
+
+    if (isOpen === false) {
+      btn.innerHTML = '○ Cerrado'
+      btn.style.background = 'rgba(250,246,240,0.05)'
+      btn.style.color = 'var(--text-3)'
+      btn.style.borderColor = 'var(--border)'
+      return
+    }
+
+    if (isBusinessOpen(openTime, closeTime, true)) {
+      btn.innerHTML = `<svg class="icon-inline logo-ember" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c0 0-3 4-3 9 0 2.5 1.5 4 3 5 1.5-1 3-2.5 3-5 0-5-3-9-3-9z" fill="currentColor" opacity="0.9"/><path d="M8 14c0 3 2 5 4 6 2-1 4-3 4-6 0-2-1-3.5-2-4.5" fill="none"/></svg> Abierto`
+      btn.style.background = 'rgba(74,222,128,0.1)'
+      btn.style.color = '#4ade80'
+      btn.style.borderColor = 'rgba(74,222,128,0.25)'
+    } else {
+      btn.innerHTML = '🕒 Cerrado (horario)'
+      btn.style.background = 'rgba(176,64,48,0.08)'
+      btn.style.color = '#C4A882'
+      btn.style.borderColor = 'rgba(176,64,48,0.2)'
+    }
+  }
+
+  renderStatusBadge()
+  // Recalcula cada minuto: si el negocio cruza su hora de cierre
+  // mientras tienes el dashboard abierto, el badge se actualiza solo.
+  setInterval(renderStatusBadge, 60000)
+
+
+  const statusColor = { pending:'#B04030', confirmed:'#60a5fa', ready:'#4ade80', delivered:'#6B7280', cancelled:'#f87171' }
+  const statusBg    = { pending:'rgba(176,64,48,0.12)', confirmed:'rgba(96,165,250,0.1)', ready:'rgba(74,222,128,0.1)', delivered:'rgba(107,114,128,0.1)', cancelled:'rgba(248,113,113,0.1)' }
+  const statusLabel = { pending:'Pendiente', confirmed:'Confirmado', ready:'Listo', delivered:'Entregado', cancelled:'Cancelado' }
+  const formatMXN   = n => new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n)
+  const formatTime  = ts => new Date(ts).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})
+
+  window.updateStatus = async (orderId, newStatus) => {
+    await sb.from('orders').update({ status: newStatus }).eq('id', orderId)
+    const card = document.getElementById(`order-${orderId}`)
+    if (!card) return
+    card.style.borderLeftColor = statusColor[newStatus]
+    const badge = card.querySelector('.order-badge')
+    if (badge) { badge.textContent = statusLabel[newStatus]; badge.style.color = statusColor[newStatus]; badge.style.background = statusBg[newStatus] }
+    const actions = document.getElementById(`actions-${orderId}`)
+    if (!actions) return
+    if (newStatus === 'confirmed') {
+      actions.innerHTML = `
+        <button class="action-btn btn-ripple" onclick="updateStatus('${orderId}','ready')" style="background:rgba(96,165,250,0.08);color:#60a5fa;border:1px solid rgba(96,165,250,0.2)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Marcar listo
+        </button>
+        <button class="action-btn sm btn-ripple" onclick="updateStatus('${orderId}','cancelled')" style="background:rgba(248,113,113,0.08);color:#f87171;border:1px solid rgba(248,113,113,0.2)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+          Cancelar
+        </button>`
+      card.classList.remove('order-card-pending')
+    } else if (newStatus === 'ready') {
+      actions.innerHTML = `<button class="action-btn btn-ripple" onclick="updateStatus('${orderId}','delivered')" style="background:rgba(74,222,128,0.08);color:#4ade80;border:1px solid rgba(74,222,128,0.2)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Entregado
+      </button>`
+    } else { actions.innerHTML = '' }
+  }
+
+  window.toggleOpen = async () => {
+    isOpen = !isOpen
+    await sb.from('businesses').update({ is_open: isOpen }).eq('id', businessId)
+    renderStatusBadge()
+
+    const quickPause = document.getElementById('quick-pause')
+    if (quickPause) {
+      quickPause.style.display = isOpen ? 'block' : 'none'
+    }
+    if (isOpen) {
+      const pauseBar = document.getElementById('pause-bar')
+      if (pauseBar) pauseBar.style.display = 'none'
+      localStorage.removeItem(`fogon_pause_${businessId}`)
+    }
+  }
+
+  window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
+
+  function addOrderCard(order) {
+    const list = document.getElementById('orders-list')
+    const card = document.createElement('div')
+    card.id = `order-${order.id}`
+    card.className = 'order-card order-card-enter'
+    
+    if (order.status === 'pending') {
+      card.classList.add('order-card-pending')
+    }
+    
+    card.style.borderLeftColor = '#B04030'
+    card.innerHTML = `
+      <div class="order-head">
+        <div class="order-meta">
+          <span class="order-id">#${order.id.slice(-6).toUpperCase()}</span>
+          <span class="order-badge" style="background:rgba(176,64,48,0.12);color:#B04030">Pendiente</span>
+          <span class="order-time">${formatTime(order.created_at)}</span>
+        </div>
+        <span class="order-total">${formatMXN(order.total)}</span>
+      </div>
+      <div class="order-body">
+        <p class="order-name">${order.customer_name}</p>
+        <p class="order-info">
+          ${order.customer_phone ? order.customer_phone + ' · ' : ''}
+          ${order.order_type === 'pickup' 
+            ? '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> Recoger</span>' 
+            : '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg> Domicilio</span>'}
+          ${order.payment_method === 'transfer' ? ' · <span style="color:#B04030;font-weight:600">🏦 Transferencia</span>' : ''}
+          ${order.notes ? ' · 📝 ' + order.notes : ''}
+        </p>
+        <div class="order-actions" id="actions-${order.id}">
+          <button class="action-btn btn-ripple" onclick="updateStatus('${order.id}','confirmed')" style="background:rgba(176,64,48,0.1);color:#B04030;border:1px solid rgba(176,64,48,0.28)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Confirmar
+          </button>
+          <button class="action-btn sm btn-ripple" onclick="updateStatus('${order.id}','cancelled')" style="background:rgba(248,113,113,0.08);color:#f87171;border:1px solid rgba(248,113,113,0.2)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+            Cancelar
+          </button>
+        </div>
+      </div>`
+    list.insertAdjacentElement('afterbegin', card)
+  }
+
+  sb.channel('orders-realtime')
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'orders', filter:`business_id=eq.${businessId}` },
+      payload => {
+        addOrderCard(payload.new)
+        playOrderSound()
+        sendOrderNotification(payload.new)
+      })
+    .subscribe()
+
+  function playOrderSound() {
+    try {
+     const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)()
+      const times = [0, 0.15, 0.3]
+      times.forEach(t => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.frequency.value = 880
+        osc.type = 'sine'
+        gain.gain.setValueAtTime(0, ctx.currentTime + t)
+        gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + t + 0.02)
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + t + 0.18)
+        osc.start(ctx.currentTime + t)
+        osc.stop(ctx.currentTime + t + 0.2)
+      })
+    } catch(e) {}
+  }
+
+  function sendOrderNotification(order) {
+    if (Notification.permission !== 'granted') return
+    const n = new Notification('🔥 Nuevo pedido — Fogón', {
+      body: `${order.customer_name} · ${new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(order.total)} · ${order.order_type === 'pickup' ? '🏪 Recoger' : '🛵 Domicilio'}`,
+      icon: '/favicon.svg',
+      badge: '/favicon.svg',
+      vibrate: [200, 100, 200],
+      tag: 'new-order',
+      renotify: true
+    })
+    n.onclick = () => { window.focus(); n.close() }
+  }
+
+  window.initNotifications = async () => {
+    const btn = document.getElementById('notif-btn')
+    if (Notification.permission === 'granted') {
+      btn.innerHTML = `<svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Activadas`
+      btn.style.color = '#4ade80'
+      btn.style.borderColor = 'rgba(74,222,128,0.3)'
+      return
+    }
+    const perm = await Notification.requestPermission()
+    if (perm === 'granted') {
+      btn.innerHTML = `<svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Activadas`
+      btn.style.color = '#4ade80'
+      btn.style.borderColor = 'rgba(74,222,128,0.3)'
+    } else {
+      btn.innerHTML = `<svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Bloqueadas`
+      btn.style.color = '#f87171'
+    }
+  }
+
+  if (Notification.permission === 'granted') {
+    const btn = document.getElementById('notif-btn')
+    if (btn) { 
+      btn.innerHTML = `<svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Activadas`
+      btn.style.color = '#4ade80'
+      btn.style.borderColor = 'rgba(74,222,128,0.3)'
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // MODO PAUSA RÁPIDO
+  // ═══════════════════════════════════════════════════════
+  let pauseEndTime = null
+  let pauseTimerInterval = null
+
+  function checkPauseStatus() {
+    const pauseData = localStorage.getItem(`fogon_pause_${businessId}`)
+    if (pauseData) {
+      const { endTime } = JSON.parse(pauseData)
+      if (endTime && new Date(endTime) > new Date()) {
+        showPauseBar(new Date(endTime))
+      } else if (!endTime) {
+        showPauseBar(null)
+      } else {
+        localStorage.removeItem(`fogon_pause_${businessId}`)
+      }
+    }
+  }
+
+  window.pauseOrders = async function(minutes) {
+    isOpen = false
+    await sb.from('businesses').update({ is_open: false }).eq('id', businessId)
+    renderStatusBadge()
+
+    const quickPause = document.getElementById('quick-pause')
+    if (quickPause) quickPause.style.display = 'none'
+    
+    if (minutes > 0) {
+      const endTime = new Date(Date.now() + minutes * 60000)
+      localStorage.setItem(`fogon_pause_${businessId}`, JSON.stringify({ endTime: endTime.toISOString() }))
+      showPauseBar(endTime)
+      setTimeout(() => resumeOrders(), minutes * 60000)
+    } else {
+      localStorage.setItem(`fogon_pause_${businessId}`, JSON.stringify({ endTime: null }))
+      showPauseBar(null)
+    }
+  }
+
+  window.resumeOrders = async function() {
+    isOpen = true
+    await sb.from('businesses').update({ is_open: true }).eq('id', businessId)
+    renderStatusBadge()
+
+    localStorage.removeItem(`fogon_pause_${businessId}`)
+    if (pauseTimerInterval) {
+      clearInterval(pauseTimerInterval)
+      pauseTimerInterval = null
+    }
+
+    const pauseBar = document.getElementById('pause-bar')
+    if (pauseBar) pauseBar.style.display = 'none'
+    const quickPause = document.getElementById('quick-pause')
+    if (quickPause) quickPause.style.display = 'block'
+  }
+
+
+  function showPauseBar(endTime) {
+    const pauseBar = document.getElementById('pause-bar')
+    const timer = document.getElementById('pause-timer')
+    const quickPause = document.getElementById('quick-pause')
+    
+    if (pauseBar) pauseBar.style.display = 'block'
+    if (quickPause) quickPause.style.display = 'none'
+    
+    if (endTime) {
+      updateTimer(endTime)
+      pauseTimerInterval = setInterval(() => updateTimer(endTime), 1000)
+    } else {
+      if (timer) timer.textContent = 'Pausado manualmente — reanuda cuando estés listo'
+    }
+  }
+
+  function updateTimer(endTime) {
+    const now = new Date()
+    const diff = endTime - now
+    const timer = document.getElementById('pause-timer')
+    
+    if (diff <= 0) {
+      if (timer) timer.textContent = 'Reanudando...'
+      resumeOrders()
+      return
+    }
+    
+    const mins = Math.floor(diff / 60000)
+    const secs = Math.floor((diff % 60000) / 1000)
+    if (timer) timer.textContent = `Se reanudará automáticamente en ${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  checkPauseStatus()
+</script>
+</html>

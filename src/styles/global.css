@@ -1,0 +1,69 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+
+
+  --font-display: "Playfair Display", serif;
+  --font-body: "Inter", sans-serif;
+
+  /* Paleta Fogón — negros cálidos + ámbar fuego */
+  --color-fog-950: #0E0904;
+  --color-fog-900: #161009;
+  --color-fog-800: #221608;
+  --color-fog-700: #2E1E0A;
+  --color-fog-600: #3D280E;
+  --color-fog-amber: #F59E0B;
+  --color-fog-ember: #DC6B19;
+  --color-fog-cream: #F5EDD6;
+  --color-fog-muted: #8B7355;
+  --color-fog-subtle: #4A3520;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background-color: #161009;
+  color: #F5EDD6;
+  font-family: "Inter", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar cálida */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #161009;
+}
+::-webkit-scrollbar-thumb {
+  background: #3D280E;
+  border-radius: 2px;
+}
+
+/* Animaciones */
+@keyframes slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.animate-slide-up  { animation: slide-up 0.3s ease-out; }
+.animate-fade-in   { animation: fade-in 0.2s ease-out; }
+
+/* Firma de Fogón — brasa activa en hover */
+.product-card {
+  border-bottom: 2px solid transparent;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.product-card:hover {
+  border-bottom-color: #F59E0B;
+  background-color: #221608;
+}

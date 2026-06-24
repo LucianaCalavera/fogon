@@ -1,0 +1,944 @@
+---
+export const prerender = false
+import { supabase } from '../lib/supabase'
+import { isBusinessOpen, nextOpenLabel } from '../lib/schedule'
+
+const { slug } = Astro.params
+
+const { data: business, error } = await supabase
+  .from('businesses')
+  .select('*')
+  .eq('slug', slug)
+  .eq('is_active', true)
+  .single()
+
+if (!business || error) return Astro.redirect('/404')
+
+// ← Estado de cuenta: hasta que confirmes el pago de instalación,
+// la tienda pública no existe para nadie de afuera. El dashboard
+// sigue funcionando para que puedan dejarlo todo listo mientras
+// esperan que les confirmes el pago.
+if (business.subscription_status !== 'active') return Astro.redirect('/404')
+
+// ← CART GUARD: Verificar si está abierto ahora (horario + Modo Pausa)
+const isOpenNow = isBusinessOpen(business.open_time, business.close_time, business.is_open)
+const nextOpenText = nextOpenLabel(business.open_time)
+
+// ← PAGOS: ¿el negocio configuró algún método de transferencia?
+const hasTransferOption = !!(business.payment_clabe || business.payment_phone || business.payment_codi_qr_url)
+
+const { data: categories } = await supabase
+  .from('categories')
+  .select('*, products(*)')
+  .eq('business_id', business.id)
+  .eq('is_active', true)
+  .order('position')
+
+const cats = (categories ?? []).map(c => ({
+  ...c,
+  products: (c.products ?? [])
+    .filter(p => p.is_available)
+    .sort((a, b) => a.position - b.position)
+})).filter(c => c.products.length > 0)
+
+const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase()
+const formatPrice = n => new Intl.NumberFormat('es-MX', { style:'currency', currency:'MXN' }).format(n)
+const hasMap = business.latitude && business.longitude
+const hasSocials = business.instagram_url || business.facebook_url || business.tiktok_url
+const hasInfo = (business.open_time && business.close_time) || business.whatsapp_number || hasSocials
+---
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{business.name} — Fogón</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+  {hasMap && <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>}
+  <style is:global>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --dark:#0A0608;
+      --dark-2:#140C0A;
+      --cream:#FAF6F0;
+      --cream-2:#F2EBE2;
+      --teja:#B04030;
+      --teja-dim:rgba(176,64,48,0.12);
+      --teja-border:rgba(176,64,48,0.3);
+      --text-dark:#2A1810;
+      --text-muted:#9A8878;
+      --text-light:#F5EEF0;
+      --text-light-2:rgba(245,238,240,0.35);
+      --divider:#EAE0D4;
+      --divider-dark:rgba(176,64,48,0.15);
+      --closed-bg:rgba(10,6,8,0.92);
+      --closed-accent:#7a2a1e;
+    }
+    html,body{height:100%;overflow:hidden}
+    @media(max-width:768px){html,body{height:auto;overflow:visible}}
+
+    /* ── Layout split ─────────────────────────────── */
+    .wrap{display:grid;grid-template-columns:38% 62%;height:100vh}
+    @media(max-width:768px){
+      .wrap{grid-template-columns:1fr;height:auto}
+    }
+
+    /* ── SIDEBAR ──────────────────────────────────── */
+    .sidebar{
+      background:var(--dark);
+      height:100vh;overflow-y:auto;
+      display:flex;flex-direction:column;
+      border-right:0.5px solid var(--divider-dark);
+      position:relative;
+    }
+    @media(max-width:768px){.sidebar{height:auto}}
+    .sidebar::-webkit-scrollbar{width:3px}
+    .sidebar::-webkit-scrollbar-track{background:var(--dark)}
+    .sidebar::-webkit-scrollbar-thumb{background:var(--teja-dim)}
+
+    .sb-header{padding:24px 20px 18px;text-align:center;border-bottom:0.5px solid var(--divider-dark);flex-shrink:0}
+    .sb-logo{
+      width:52px;height:52px;border-radius:13px;
+      background:var(--teja-dim);border:1.5px solid var(--teja-border);
+      margin:0 auto 12px;
+      display:flex;align-items:center;justify-content:center;
+      font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:500;
+      color:var(--teja);overflow:hidden;
+    }
+    .sb-logo img{width:100%;height:100%;object-fit:cover}
+    .sb-name{
+      font-family:'Cormorant Garamond',serif;
+      font-size:28px;font-style:italic;font-weight:400;
+      color:var(--text-light);letter-spacing:0.3px;margin-bottom:4px;
+    }
+    .sb-desc{font-size:14px;color:var(--text-light-2);margin-bottom:12px;line-height:1.5}
+    .sb-status{display:flex;align-items:center;justify-content:center;gap:10px}
+
+    .recent-order-banner{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      background:var(--teja-dim);border:1px solid var(--teja-border);border-radius:10px;
+      padding:11px 14px;margin:0 24px 16px;text-decoration:none;
+      font-family:'Inter',sans-serif;font-size:13px;color:var(--teja);
+    }
+    .recent-order-link{font-weight:700;white-space:nowrap}
+    .status-badge{
+      font-size:13px;padding:4px 13px;border-radius:999px;font-family:'Inter',sans-serif;
+    }
+    .status-open{background:rgba(74,222,128,0.08);color:rgba(74,222,128,0.8)}
+    .status-closed{background:rgba(255,255,255,0.05);color:rgba(245,238,240,0.3)}
+    .sb-hours{font-size:12px;color:rgba(245,238,240,0.25);font-family:'Inter',sans-serif}
+
+    /* ← CART GUARD: Banner de cerrado */
+    .closed-banner{
+      background:var(--closed-bg);
+      border:1px solid var(--closed-accent);
+      border-radius:12px;
+      padding:16px 20px;
+      margin:12px 20px 0;
+      text-align:center;
+      flex-shrink:0;
+    }
+    .closed-banner-icon{font-size:28px;margin-bottom:8px}
+    .closed-banner-title{
+      font-family:'Cormorant Garamond',serif;
+      font-size:20px;font-weight:600;
+      color:var(--text-light);margin-bottom:4px;
+    }
+    .closed-banner-text{
+      font-size:13px;color:var(--text-muted);
+      font-family:'Inter',sans-serif;
+    }
+    .closed-banner-hours{
+      font-size:14px;color:var(--teja);
+      font-weight:600;margin-top:8px;
+      font-family:'Inter',sans-serif;
+    }
+
+    /* Cover foto */
+    .sb-cover{width:100%;height:220px;object-fit:cover;display:block;flex-shrink:0}
+    .sb-cover-placeholder{
+      width:100%;height:220px;background:var(--dark-2);
+      display:flex;align-items:center;justify-content:center;
+      border-top:0.5px solid var(--divider-dark);
+      border-bottom:0.5px solid var(--divider-dark);
+      flex-shrink:0;
+    }
+
+    /* Mapa */
+    #map{width:calc(100% - 24px);flex:1;min-height:140px;margin:10px 12px 0;border-radius:8px;overflow:hidden;position:relative;z-index:0}
+    .sb-address{
+      padding:10px 20px;text-align:center;
+      font-size:12px;color:rgba(245,238,240,0.25);
+      font-family:'Inter',sans-serif;line-height:1.6;
+      border-top:0.5px solid var(--divider-dark);
+      flex-shrink:0;
+    }
+
+    /* Horario + WhatsApp + redes */
+    .sb-info{
+      padding:16px 20px;
+      border-top:0.5px solid var(--divider-dark);
+      display:flex;flex-direction:column;gap:12px;
+      flex-shrink:0;
+    }
+    .sb-hours-row{
+      display:flex;align-items:baseline;justify-content:space-between;
+      font-family:'Inter',sans-serif;font-size:13px;
+    }
+    .sb-hours-row .label{color:rgba(245,238,240,0.35)}
+    .sb-hours-row .value{color:var(--text-light)}
+    .sb-whatsapp-btn{
+      display:inline-flex;align-items:center;justify-content:center;gap:6px;
+      align-self:center;
+      padding:7px 16px;border-radius:999px;
+      background:var(--teja-dim);border:1px solid var(--teja-border);color:var(--teja);
+      font-family:'Inter',sans-serif;font-size:12px;font-weight:500;
+      text-decoration:none;transition:opacity 0.15s;
+    }
+    .sb-whatsapp-btn:active{opacity:0.7}
+    .sb-socials{display:flex;align-items:center;justify-content:center;gap:10px}
+    .sb-social-icon{
+      width:30px;height:30px;border-radius:50%;
+      background:var(--teja-dim);border:1px solid var(--teja-border);
+      display:flex;align-items:center;justify-content:center;
+      color:var(--teja);text-decoration:none;transition:opacity 0.15s;
+    }
+    .sb-social-icon:active{opacity:0.8}
+
+    /* ── Panel menú ───────────────────────────────── */
+    .menu-panel{
+      background:var(--cream);
+      height:100vh;
+      display:flex;flex-direction:column;
+      overflow:hidden;
+    }
+    @media(max-width:768px){.menu-panel{height:auto;overflow:visible}}
+
+    /* Nav categorías sticky */
+    .cat-nav{
+      background:var(--cream);
+      border-bottom:0.5px solid var(--divider);
+      padding:0 20px;
+      display:flex;gap:0;
+      overflow-x:auto;white-space:nowrap;
+      flex-shrink:0;
+    }
+    .cat-nav::-webkit-scrollbar{display:none}
+    .cat-link{
+      display:inline-block;padding:12px 0;margin-right:18px;
+      font-size:14px;font-weight:500;color:var(--text-muted);
+      text-decoration:none;border-bottom:1.5px solid transparent;
+      transition:color 0.15s,border-color 0.15s;
+      font-family:'Inter',sans-serif;
+    }
+    .cat-link.active,.cat-link:hover{color:var(--teja);border-bottom-color:var(--teja)}
+
+    /* Área de productos scrolleable */
+    .products-area{flex:1;overflow-y:auto;padding:0 20px 12px}
+    .products-area::-webkit-scrollbar{width:3px}
+    .products-area::-webkit-scrollbar-track{background:var(--cream)}
+    .products-area::-webkit-scrollbar-thumb{background:var(--divider)}
+    @media(max-width:768px){.products-area{overflow:visible;padding-bottom:20px}}
+
+    .cat-section{padding-top:20px}
+    .cat-label{
+      font-size:11px;font-weight:600;letter-spacing:2px;
+      text-transform:uppercase;color:#C0A898;
+      margin-bottom:10px;font-family:'Inter',sans-serif;
+    }
+
+    /* Producto: foto a la izquierda, info al centro, botón a la derecha */
+    .product-item{
+      display:flex;align-items:center;
+      gap:14px;padding:14px 0;
+      border-bottom:0.5px solid var(--divider);
+      cursor:pointer;
+    }
+    .product-item:last-child{border-bottom:none}
+    .product-thumb{width:84px;height:84px;border-radius:10px;flex-shrink:0;overflow:hidden;background:var(--divider)}
+    .product-img{width:100%;height:100%;object-fit:cover;display:block}
+    .product-img-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+    .product-info{flex:1;min-width:0}
+    .product-name{
+      font-family:'Cormorant Garamond',serif;
+      font-size:19px;color:var(--text-dark);margin-bottom:3px;
+    }
+    .product-desc{font-size:13px;color:var(--text-muted);line-height:1.5;font-family:'Inter',sans-serif}
+    .product-price{
+      font-family:'Cormorant Garamond',serif;
+      font-size:19px;color:var(--teja);white-space:nowrap;
+    }
+    
+    /* ← CART GUARD: Botón deshabilitado cuando cerrado */
+    .add-btn{
+      width:28px;height:28px;border-radius:50%;
+      background:var(--teja);border:none;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
+      transition:opacity 0.15s;flex-shrink:0;
+    }
+    .add-btn:active{opacity:0.8}
+    .add-btn:disabled{
+      background:var(--text-muted);
+      opacity:0.4;
+      cursor:not-allowed;
+    }
+    .add-btn:disabled:active{opacity:0.4}
+
+    /* Estado vacío */
+    .empty{text-align:center;padding:60px 20px;color:var(--text-muted)}
+    .empty-title{font-family:'Cormorant Garamond',serif;font-size:20px;color:var(--text-muted);margin-top:10px}
+
+    /* Brasas flotantes sidebar */
+    .sb-embers{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
+    .sb-ember{position:absolute;border-radius:50%;background:#B04030;opacity:0;bottom:-5px;box-shadow:0 0 6px 2px rgba(176,64,48,0.4);animation:sb-rise linear infinite}
+    @keyframes sb-rise{0%{opacity:0;transform:translateY(0) translateX(0) scale(0.5)}10%{opacity:0.7}70%{opacity:0.45}100%{opacity:0;transform:translateY(-80vh) translateX(var(--drift)) scale(1.2)}}
+
+    /* Barra carrito — oculta cuando cerrado */
+    .cart-bar{
+      padding:12px 20px;
+      background:var(--cream);
+      border-top:0.5px solid var(--divider);
+      flex-shrink:0;
+    }
+    .cart-btn{
+      width:100%;padding:11px 16px;
+      background:var(--teja);border:none;border-radius:4px;
+      font-size:13px;font-weight:600;color:var(--cream);
+      cursor:pointer;letter-spacing:1.5px;text-transform:uppercase;
+      font-family:'Inter',sans-serif;
+      display:flex;align-items:center;justify-content:space-between;
+      transition:opacity 0.15s;
+    }
+    .cart-btn:active{opacity:0.9}
+    .cart-btn:disabled{
+      background:var(--text-muted);
+      opacity:0.4;
+      cursor:not-allowed;
+    }
+
+    /* ── Modal carrito/checkout ───────────────────── */
+    .modal-overlay{
+      display:none;position:fixed;inset:0;
+      background:rgba(10,6,8,0.7);z-index:50;
+      align-items:flex-end;justify-content:center;
+    }
+    @media(min-width:769px){
+      .modal-overlay{align-items:center}
+    }
+    .modal{
+      background:var(--dark);
+      width:100%;max-width:480px;
+      border-radius:16px 16px 0 0;
+      max-height:88vh;overflow-y:auto;
+      border-top:1px solid var(--teja-border);
+    }
+    @media(min-width:769px){
+      .modal{border-radius:16px;max-height:80vh}
+    }
+    .modal-handle{width:36px;height:3px;background:rgba(245,238,240,0.1);border-radius:2px;margin:12px auto 0}
+    .modal-header{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:14px 20px;border-bottom:0.5px solid var(--divider-dark);
+    }
+    .modal-title{font-family:'Cormorant Garamond',serif;font-size:22px;font-style:italic;color:var(--text-light)}
+    .modal-close{background:none;border:none;color:rgba(245,238,240,0.4);cursor:pointer;font-size:18px;padding:2px;line-height:1}
+    .modal-items{padding:14px 20px;display:flex;flex-direction:column;gap:12px}
+    .modal-item{display:flex;align-items:center;gap:12px}
+    .modal-item-img{width:46px;height:46px;border-radius:6px;object-fit:cover;flex-shrink:0}
+    .modal-item-info{flex:1;min-width:0}
+    .modal-item-name{font-family:'Cormorant Garamond',serif;font-size:16px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .modal-item-price{font-size:14px;color:var(--teja);margin-top:2px;font-family:'Inter',sans-serif}
+    .qty-row{display:flex;align-items:center;gap:8px;flex-shrink:0}
+    .qty-btn{
+      width:26px;height:26px;border-radius:50%;
+      background:rgba(245,238,240,0.06);border:none;
+      color:var(--text-light);cursor:pointer;font-size:15px;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .qty-num{font-size:13px;font-weight:500;color:var(--text-light);width:16px;text-align:center;font-family:'Inter',sans-serif}
+
+    /* Form checkout */
+    .checkout-section{padding:14px 20px;border-top:0.5px solid var(--divider-dark)}
+    .checkout-label{font-size:14px;font-style:italic;color:rgba(245,238,240,0.4);margin-bottom:12px;display:block;font-family:'Cormorant Garamond',serif}
+    .form-input,.form-textarea{
+      width:100%;background:rgba(245,238,240,0.04);
+      color:var(--text-light);border:0.5px solid rgba(245,238,240,0.1);
+      border-radius:6px;padding:13px 16px;font-size:15px;
+      outline:none;margin-bottom:8px;font-family:'Inter',sans-serif;
+      transition:border-color 0.15s;
+    }
+    .form-input:focus,.form-textarea:focus{border-color:var(--teja-border)}
+    .form-input::placeholder,.form-textarea::placeholder{color:rgba(245,238,240,0.2)}
+    .form-textarea{resize:none}
+    .type-row{display:flex;gap:8px;margin-bottom:8px}
+    .type-btn{
+      flex:1;padding:9px;border-radius:6px;
+      font-size:13px;font-weight:500;cursor:pointer;
+      font-family:'Inter',sans-serif;transition:all 0.15s;
+      letter-spacing:0.5px;
+    }
+    .type-btn.on{border:0.5px solid var(--teja-border);background:var(--teja-dim);color:var(--teja)}
+    .type-btn.off{border:0.5px solid rgba(245,238,240,0.08);background:transparent;color:rgba(245,238,240,0.3)}
+
+    /* Footer modal */
+    .modal-footer{
+      position:sticky;bottom:0;
+      background:var(--dark);
+      border-top:0.5px solid var(--divider-dark);
+      padding:14px 20px;
+    }
+    .total-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+    .total-label{font-size:14px;color:rgba(245,238,240,0.35);font-family:'Inter',sans-serif}
+    .total-amount{font-family:'Cormorant Garamond',serif;font-size:28px;color:var(--teja)}
+    .confirm-btn{
+      width:100%;padding:12px;background:var(--teja);
+      border:none;border-radius:4px;
+      font-size:13px;font-weight:600;color:var(--cream);
+      cursor:pointer;letter-spacing:1.5px;text-transform:uppercase;
+      font-family:'Inter',sans-serif;transition:opacity 0.15s;
+    }
+    .confirm-btn:disabled{opacity:0.5}
+    .error-msg{display:none;color:#f87171;font-size:13px;text-align:center;margin-top:8px;font-family:'Inter',sans-serif}
+
+    /* Pantalla de instrucciones de pago */
+    .payment-screen{
+      display:none;position:fixed;inset:0;
+      background:var(--cream);z-index:60;overflow-y:auto;
+      flex-direction:column;align-items:center;justify-content:center;
+      padding:32px;text-align:center;
+    }
+    .payment-card{width:100%;max-width:340px}
+    .success-icon{
+      width:72px;height:72px;border-radius:18px;
+      background:var(--teja-dim);border:1.5px solid var(--teja-border);
+      display:flex;align-items:center;justify-content:center;
+      margin:0 auto 24px;font-size:30px;
+    }
+    .success-title{font-family:'Cormorant Garamond',serif;font-size:28px;font-style:italic;color:var(--text-dark);margin-bottom:8px}
+    .success-sub{font-size:14px;color:var(--text-muted);margin-bottom:24px;font-family:'Inter',sans-serif}
+
+    .pay-qr-block{margin-bottom:20px}
+    .pay-qr-img{width:160px;height:160px;object-fit:contain;border-radius:12px;border:1px solid var(--divider);background:#fff;padding:8px}
+    .pay-qr-label{font-size:12px;color:var(--text-muted);margin-top:8px;font-family:'Inter',sans-serif}
+
+    .pay-field-row{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      background:var(--cream-2);border:1px solid var(--divider);border-radius:10px;
+      padding:12px 16px;margin-bottom:10px;text-align:left;
+    }
+    .pay-field-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;font-family:'Inter',sans-serif}
+    .pay-field-value{font-size:16px;font-weight:600;color:var(--text-dark);font-family:'Inter',sans-serif;word-break:break-all}
+    .pay-copy-btn{
+      flex-shrink:0;background:var(--teja-dim);color:var(--teja);border:1px solid var(--teja-border);
+      border-radius:7px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;
+    }
+    .pay-bank-name{font-size:13px;color:var(--text-muted);margin:4px 0 20px;font-family:'Inter',sans-serif}
+    .pay-note{font-size:12px;color:var(--text-muted);margin-top:12px;font-family:'Inter',sans-serif}
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <!-- ── SIDEBAR ──────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <div class="sb-header">
+      <div class="sb-logo">
+        {business.logo_url ? <img src={business.logo_url} alt={business.name}/> : initials}
+      </div>
+      <h1 class="sb-name">{business.name}</h1>
+      {business.description && <p class="sb-desc">{business.description}</p>}
+      <div class="sb-status">
+        <span class={`status-badge ${isOpenNow ? 'status-open' : 'status-closed'}`}>
+          {isOpenNow ? '● Abierto' : '○ Cerrado'}
+        </span>
+        {business.open_time && business.close_time && (
+          <span class="sb-hours">{business.open_time.slice(0,5)} – {business.close_time.slice(0,5)}</span>
+        )}
+      </div>
+    </div>
+
+    <!-- ← Pedido reciente: si el navegador recuerda un pedido hecho
+         hace poco, lo mostramos para que no se pierda si cerraron
+         la pestaña por accidente. -->
+    <a class="recent-order-banner" id="recent-order-banner" href="#" style="display:none">
+      <span>📦 Tienes un pedido reciente</span>
+      <span class="recent-order-link">Ver estado →</span>
+    </a>
+
+    <!-- ← CART GUARD: Banner cuando está cerrado -->
+    {!isOpenNow && (
+      <div class="closed-banner">
+        <div class="closed-banner-icon">🔒</div>
+        <div class="closed-banner-title">Cerrado por ahora</div>
+        <div class="closed-banner-text">No puedes hacer pedidos en este momento</div>
+        {nextOpenText && (
+          <div class="closed-banner-hours">{nextOpenText}</div>
+        )}
+      </div>
+    )}
+
+    {business.cover_url
+      ? <img src={business.cover_url} alt="" class="sb-cover" style={`object-position:${business.cover_position ?? '50% 50%'}`}/>
+      : <div class="sb-cover-placeholder">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(176,64,48,0.3)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+        </div>
+    }
+
+    {hasMap
+      ? <div id="map"></div>
+      : <div style="flex:1;min-height:140px;background:rgba(255,255,255,0.02);display:flex;align-items:center;justify-content:center;margin:10px 12px 0;border-radius:8px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(176,64,48,0.25)" stroke-width="1.5"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+        </div>
+    }
+
+    {business.address && (
+      <div class="sb-address">{business.address}</div>
+    )}
+
+    {hasInfo && (
+      <div class="sb-info">
+        {business.open_time && business.close_time && (
+          <div class="sb-hours-row">
+            <span class="label">Horario</span>
+            <span class="value">{business.open_time.slice(0,5)} – {business.close_time.slice(0,5)}</span>
+          </div>
+        )}
+
+        {business.whatsapp_number && (
+          <a href={`https://wa.me/${business.whatsapp_number}`} target="_blank" rel="noopener" class="sb-whatsapp-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+            Escríbenos por WhatsApp
+          </a>
+        )}
+
+        {hasSocials && (
+          <div class="sb-socials">
+            {business.instagram_url && (
+              <a href={business.instagram_url} target="_blank" rel="noopener" class="sb-social-icon" aria-label="Instagram">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="3.5"/><circle cx="17" cy="7" r="0.8" fill="currentColor" stroke="none"/></svg>
+              </a>
+            )}
+            {business.facebook_url && (
+              <a href={business.facebook_url} target="_blank" rel="noopener" class="sb-social-icon" aria-label="Facebook">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 21v-7.5h2.5l.5-3h-3V8.5c0-.9.3-1.5 1.6-1.5H17V4.3C16.6 4.2 15.5 4 14.2 4 11.5 4 9.7 5.6 9.7 8.2v2.3H7v3h2.7V21h3.8z"/></svg>
+              </a>
+            )}
+            {business.tiktok_url && (
+              <a href={business.tiktok_url} target="_blank" rel="noopener" class="sb-social-icon" aria-label="TikTok">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 3c.4 2.2 2 3.8 4.2 4.1v3c-1.6 0-3-.5-4.2-1.4v6.8c0 3.2-2.6 5.5-5.6 5.5S5.3 18.7 5.3 15.5 7.9 10 10.9 10c.4 0 .8 0 1.2.1v3.1c-.4-.1-.8-.2-1.2-.2-1.4 0-2.6 1.1-2.6 2.5s1.2 2.5 2.6 2.5 2.6-1.1 2.6-2.5V3h3z"/></svg>
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    )}
+
+    <!-- Brasas flotantes -->
+    <div class="sb-embers" aria-hidden="true">
+      <span class="sb-ember" style="left:8%;width:5px;height:5px;animation-duration:7s;animation-delay:0s;--drift:20px"></span>
+      <span class="sb-ember" style="left:25%;width:4px;height:4px;animation-duration:10s;animation-delay:1.5s;--drift:-18px"></span>
+      <span class="sb-ember" style="left:55%;width:5px;height:5px;animation-duration:9s;animation-delay:0.8s;--drift:22px"></span>
+      <span class="sb-ember" style="left:75%;width:4px;height:4px;animation-duration:11s;animation-delay:2.2s;--drift:-14px"></span>
+      <span class="sb-ember" style="left:40%;width:3px;height:3px;animation-duration:8s;animation-delay:3.5s;--drift:16px"></span>
+    </div>
+
+  </aside>
+
+  <!-- ── PANEL MENÚ ────────────────────────────────── -->
+  <div class="menu-panel">
+
+    {cats.length > 1 && (
+      <nav class="cat-nav">
+        {cats.map(cat => (
+          <a href={`#cat-${cat.id}`} class="cat-link">{cat.name}</a>
+        ))}
+      </nav>
+    )}
+
+    <div class="products-area" id="products-area">
+      {cats.length === 0 && (
+        <div class="empty">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--divider)" stroke-width="1.5"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/></svg>
+          <p class="empty-title">El menú está en preparación</p>
+        </div>
+      )}
+
+      {cats.map(cat => (
+        <section id={`cat-${cat.id}`} class="cat-section">
+          <p class="cat-label">{cat.name}</p>
+          {cat.products.map(product => (
+            <div
+              class="product-item"
+              data-id={product.id}
+              data-name={product.name}
+              data-price={product.price}
+              data-image={product.image_url ?? ''}
+              onclick={isOpenNow ? `addToCart(this)` : undefined}
+              style={!isOpenNow ? 'opacity:0.6;cursor:not-allowed;' : ''}
+            >
+              <div class="product-thumb">
+                {product.image_url
+                  ? <img src={product.image_url} alt={product.name} class="product-img"/>
+                  : <div class="product-img-placeholder"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(176,64,48,0.3)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg></div>
+                }
+              </div>
+
+              <div class="product-info">
+                <p class="product-name">{product.name}</p>
+                {product.description && <p class="product-desc">{product.description}</p>}
+                <p class="product-price" style="margin-top:6px">{formatPrice(product.price)}</p>
+              </div>
+
+              <!-- ← CART GUARD: Botón deshabilitado cuando cerrado -->
+              <button 
+                class="add-btn" 
+                aria-label={`Agregar ${product.name}`}
+                disabled={!isOpenNow}
+                onclick={isOpenNow ? undefined : 'event.stopPropagation();'}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+            </div>
+          ))}
+        </section>
+      ))}
+    </div>
+
+    <!-- ← CART GUARD: Carrito oculto cuando cerrado -->
+    <div class="cart-bar" id="cart-bar" style="display:none">
+      <button class="cart-btn" onclick="openModal()" id="cart-btn">
+        <span id="cart-count-label">1 producto</span>
+        <span id="cart-total-label">Ver carrito — $0</span>
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── MODAL CARRITO/CHECKOUT ─────────────────────── -->
+<div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
+  <div class="modal" id="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h2 class="modal-title">Tu pedido</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-items" id="modal-items"></div>
+    <div class="checkout-section">
+      <span class="checkout-label">¿A quién le entregamos?</span>
+      <input class="form-input" id="customer-name" type="text" placeholder="Tu nombre *"/>
+      <input class="form-input" id="customer-phone" type="tel" placeholder="WhatsApp"/>
+      <div class="type-row">
+        <button id="btn-pickup" class="type-btn on" onclick="setType('pickup')">🏪 Recoger</button>
+        <button id="btn-delivery" class="type-btn off" onclick="setType('delivery')">🛵 Domicilio</button>
+      </div>
+      {hasTransferOption && (
+        <div class="type-row">
+          <button id="btn-cash" class="type-btn on" onclick="setPaymentMethod('cash')">💵 Efectivo</button>
+          <button id="btn-transfer" class="type-btn off" onclick="setPaymentMethod('transfer')">🏦 Transferencia</button>
+        </div>
+      )}
+      <textarea class="form-textarea" id="order-notes" rows="2" placeholder="Notas: alergias, instrucciones..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <div class="total-row">
+        <span class="total-label">Total</span>
+        <span class="total-amount" id="modal-total">$0</span>
+      </div>
+      <button class="confirm-btn" id="confirm-btn" onclick="handleSubmit()">Confirmar pedido</button>
+      <p class="error-msg" id="error-msg"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ── PANTALLA ÉXITO CON TRACKING ────────────────── -->
+<!-- ── PANTALLA DE INSTRUCCIONES DE PAGO (solo transferencia) ── -->
+<div class="payment-screen" id="payment-screen">
+  <div class="payment-card">
+    <div class="success-icon">🏦</div>
+    <h2 class="success-title">Completa tu pago</h2>
+    <p class="success-sub">Pedido <strong id="pay-order-num">#000</strong> · <span id="pay-amount">$0</span></p>
+
+    {business.payment_codi_qr_url && (
+      <div class="pay-qr-block">
+        <img src={business.payment_codi_qr_url} alt="QR de CoDi" class="pay-qr-img"/>
+        <p class="pay-qr-label">Escanéalo con tu app del banco (CoDi)</p>
+      </div>
+    )}
+
+    {business.payment_clabe && (
+      <div class="pay-field-row">
+        <div>
+          <p class="pay-field-label">CLABE</p>
+          <p class="pay-field-value" id="pay-clabe">{business.payment_clabe}</p>
+        </div>
+        <button class="pay-copy-btn" onclick="copyPayField('pay-clabe', this)">Copiar</button>
+      </div>
+    )}
+
+    {business.payment_phone && (
+      <div class="pay-field-row">
+        <div>
+          <p class="pay-field-label">Celular (DiMo)</p>
+          <p class="pay-field-value" id="pay-phone">{business.payment_phone}</p>
+        </div>
+        <button class="pay-copy-btn" onclick="copyPayField('pay-phone', this)">Copiar</button>
+      </div>
+    )}
+
+    {business.payment_bank_name && <p class="pay-bank-name">Banco: {business.payment_bank_name}</p>}
+
+    <button class="confirm-btn" id="pay-done-btn" onclick="confirmTransferSent()">Ya transferí, enviar comprobante</button>
+    <p class="pay-note">Te vamos a abrir WhatsApp para que mandes tu captura de pantalla.</p>
+  </div>
+</div>
+
+<div id="cfg" data-bid={business.id} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} data-is-open={String(isOpenNow)} data-whatsapp={business.whatsapp_number ?? ''} hidden></div>
+
+{hasMap && <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>}
+</body>
+
+<script>
+import { createClient } from '@supabase/supabase-js'
+
+const cfg = document.getElementById('cfg')
+const businessId = cfg.dataset.bid
+const isOpenNow = cfg.dataset.isOpen === 'true'
+const sb = createClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUBLIC_SUPABASE_ANON_KEY)
+
+// ── Pedido reciente (mismo navegador) ──────────────
+// Capa automática, de respaldo: si no cerraron el link a propósito
+// y vuelven a la tienda desde el mismo celular, se los recordamos.
+// No sustituye "Guardar este link" — ese funciona desde cualquier
+// lado; esto solo ayuda si nunca se movieron de este navegador.
+;(() => {
+  try {
+    const key = `fogon_last_order_${businessId}`
+    const saved = JSON.parse(localStorage.getItem(key) || 'null')
+    if (!saved) return
+    const hoursSince = (Date.now() - saved.createdAt) / 3600000
+    if (hoursSince > 6) { localStorage.removeItem(key); return }
+    const banner = document.getElementById('recent-order-banner')
+    banner.href = `/pedido/${saved.orderId}`
+    banner.style.display = 'flex'
+  } catch (e) {}
+})()
+
+// ── Mapa ──────────────────────────────────────────
+const lat = parseFloat(cfg.dataset.lat)
+const lng = parseFloat(cfg.dataset.lng)
+if (!isNaN(lat) && !isNaN(lng) && window.L) {
+  const map = window.L.map('map', { zoomControl:false, dragging:false, scrollWheelZoom:false }).setView([lat,lng], 15)
+  window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'© OpenStreetMap, © CARTO', maxZoom:19
+  }).addTo(map)
+  const icon = window.L.divIcon({
+    html: `<div style="width:12px;height:12px;border-radius:50%;background:#B04030;border:2px solid rgba(176,64,48,0.4);box-shadow:0 0 0 4px rgba(176,64,48,0.15)"></div>`,
+    className:'', iconAnchor:[6,6]
+  })
+  window.L.marker([lat,lng], { icon }).addTo(map)
+  window.addEventListener('resize', () => map.invalidateSize())
+  setTimeout(() => map.invalidateSize(), 100)
+}
+
+// ── Carrito ───────────────────────────────────────
+let cart = []
+let orderType = 'pickup'
+let paymentMethod = 'cash'
+let submitting = false
+
+// ← CART GUARD: Solo permitir addToCart si está abierto
+window.addToCart = (el) => {
+  if (!isOpenNow) return // Doble protección
+  
+  const { id, name, price, image } = el.dataset
+  const existing = cart.find(i => i.id === id)
+  if (existing) { existing.qty++ } else { cart.push({ id, name, price: parseFloat(price), image: image || '', qty: 1 }) }
+  updateUI()
+}
+
+window.changeQty = (id, delta) => {
+  const item = cart.find(i => i.id === id)
+  if (!item) return
+  item.qty += delta
+  if (item.qty <= 0) cart = cart.filter(i => i.id !== id)
+  updateUI()
+  if (cart.length === 0) closeModal()
+}
+
+function getTotal() { return cart.reduce((s,i) => s + i.price * i.qty, 0) }
+function fmt(n) { return new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n) }
+
+function updateUI() {
+  const count = cart.reduce((s,i) => s + i.qty, 0)
+  const total = getTotal()
+  const bar = document.getElementById('cart-bar')
+  
+  // ← CART GUARD: Solo mostrar carrito si está abierto y hay items
+  if (!isOpenNow || count === 0) {
+    bar.style.display = 'none'
+    return
+  }
+  
+  bar.style.display = 'block'
+  document.getElementById('cart-count-label').textContent = `${count} ${count === 1 ? 'producto' : 'productos'}`
+  document.getElementById('cart-total-label').textContent = `Ver carrito — ${fmt(total)}`
+  document.getElementById('modal-total').textContent = fmt(total)
+  document.getElementById('modal-items').innerHTML = cart.map(item => `
+    <div class="modal-item">
+      ${item.image ? `<img src="${item.image}" class="modal-item-img" alt="${item.name}"/>` : ''}
+      <div class="modal-item-info">
+        <p class="modal-item-name">${item.name}</p>
+        <p class="modal-item-price">${fmt(item.price)}</p>
+      </div>
+      <div class="qty-row">
+        <button class="qty-btn" onclick="changeQty('${item.id}',-1)">−</button>
+        <span class="qty-num">${item.qty}</span>
+        <button class="qty-btn" onclick="changeQty('${item.id}',1)">+</button>
+      </div>
+    </div>`).join('')
+}
+
+window.openModal = () => { 
+  if (!isOpenNow) return // ← CART GUARD
+  document.getElementById('modal-overlay').style.display = 'flex' 
+}
+window.closeModal = () => { document.getElementById('modal-overlay').style.display = 'none' }
+window.handleOverlayClick = (e) => { if (e.target.id === 'modal-overlay') closeModal() }
+
+window.setType = (type) => {
+  orderType = type
+  document.getElementById('btn-pickup').className = `type-btn ${type === 'pickup' ? 'on' : 'off'}`
+  document.getElementById('btn-delivery').className = `type-btn ${type === 'delivery' ? 'on' : 'off'}`
+}
+
+window.setPaymentMethod = (method) => {
+  paymentMethod = method
+  const cashBtn = document.getElementById('btn-cash')
+  const transferBtn = document.getElementById('btn-transfer')
+  if (cashBtn) cashBtn.className = `type-btn ${method === 'cash' ? 'on' : 'off'}`
+  if (transferBtn) transferBtn.className = `type-btn ${method === 'transfer' ? 'on' : 'off'}`
+}
+
+window.handleSubmit = async () => {
+  // ← CART GUARD: Validar que sigue abierto antes de enviar
+  if (!isOpenNow) {
+    errEl.textContent = '⏰ El negocio está cerrado. No se pueden hacer pedidos en este momento.'
+    errEl.style.display = 'block'
+    return
+  }
+  
+  if (submitting) return
+  const name = document.getElementById('customer-name').value.trim()
+  const phone = document.getElementById('customer-phone').value.trim()
+  const notes = document.getElementById('order-notes').value.trim()
+  const errEl = document.getElementById('error-msg')
+  
+  if (!name) { errEl.textContent = 'Escribe tu nombre'; errEl.style.display = 'block'; return }
+  errEl.style.display = 'none'
+  
+  submitting = true
+  const btn = document.getElementById('confirm-btn')
+  btn.disabled = true; btn.textContent = 'Enviando...'
+  
+  try {
+    const orderId = crypto.randomUUID()
+    const { error: oErr } = await sb.from('orders').insert({
+      id: orderId, business_id: businessId,
+      customer_name: name, customer_phone: phone || null,
+      order_type: orderType, notes: notes || null, total: getTotal(),
+      payment_method: paymentMethod
+    })
+    if (oErr) throw oErr
+    
+    await sb.from('order_items').insert(cart.map(i => ({
+      order_id: orderId, product_id: i.id,
+      name_snap: i.name, price_snap: i.price,
+      quantity: i.qty, subtotal: i.price * i.qty
+    })))
+    
+    try {
+      localStorage.setItem(`fogon_last_order_${businessId}`, JSON.stringify({ orderId, createdAt: Date.now() }))
+    } catch (e) {}
+
+    closeModal()
+
+    if (paymentMethod === 'transfer') {
+      // Antes de irnos a /pedido, mostramos cómo pagar — el pedido
+      // ya existe, así que el negocio lo ve aunque cierren esta
+      // pantalla sin terminar.
+      const screen = document.getElementById('payment-screen')
+      screen.dataset.orderId = orderId
+      document.getElementById('pay-order-num').textContent = `#${orderId.slice(-6).toUpperCase()}`
+      document.getElementById('pay-amount').textContent = fmt(getTotal())
+      screen.style.display = 'flex'
+    } else {
+      // Redirige a la página de seguimiento — URL real, sobrevive a un
+      // refresh y se puede compartir/guardar (antes era solo un overlay
+      // en esta misma página que se perdía al recargar).
+      window.location.href = `/pedido/${orderId}`
+    }
+  } catch(err) {
+    errEl.textContent = 'Algo salió mal, intenta de nuevo'
+    errEl.style.display = 'block'
+    submitting = false; btn.disabled = false; btn.textContent = 'Confirmar pedido'
+  }
+}
+
+window.copyPayField = (id, btn) => {
+  const text = document.getElementById(id).textContent.trim()
+  navigator.clipboard.writeText(text).catch(() => {})
+  const original = btn.textContent
+  btn.textContent = '¡Copiado!'
+  setTimeout(() => { btn.textContent = original }, 1500)
+}
+
+window.confirmTransferSent = () => {
+  const screen = document.getElementById('payment-screen')
+  const orderId = screen.dataset.orderId
+  const amount = document.getElementById('pay-amount').textContent
+  const orderNum = document.getElementById('pay-order-num').textContent
+  const whatsapp = document.getElementById('cfg').dataset.whatsapp
+
+  // En vez de abrir WhatsApp y redirigir al mismo tiempo (eso es lo
+  // que fallaba — competían entre sí), mandamos los datos por la URL
+  // y dejamos que /pedido/{id} muestre el botón de WhatsApp ahí,
+  // sin pelear con la navegación.
+  const params = new URLSearchParams({ amt: amount, num: orderNum })
+  if (whatsapp) params.set('wa', whatsapp)
+
+  window.location.href = `/pedido/${orderId}?${params.toString()}`
+}
+
+// Chispas brasas sidebar
+;[
+  {l:70,s:2.5,dur:7,del:0,d:'8px'},
+  {l:140,s:2,dur:9,del:2.5,d:'-10px'},
+  {l:195,s:3,dur:8,del:4.8,d:'12px'},
+  {l:100,s:2,dur:10,del:1.5,d:'-7px'},
+  {l:165,s:2.5,dur:7.5,del:6,d:'9px'},
+].forEach(({l,s,dur,del,d}) => {
+  const em = document.createElement('div')
+  em.className = 'sb-spark'
+  em.style.cssText = `left:${l}px;width:${s}px;height:${s}px;animation-duration:${dur}s;animation-delay:${del}s;--d:${d}`
+  document.getElementById('sb-embers').appendChild(em)
+})
+
+// Nav activo al scroll
+const sections = document.querySelectorAll('section[id^="cat-"]')
+const links = document.querySelectorAll('.cat-link')
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.remove('active'))
+      document.querySelector(`.cat-link[href="#${e.target.id}"]`)?.classList.add('active')
+    }
+  })
+}, { root: document.getElementById('products-area'), threshold: 0.4 })
+sections.forEach(s => observer.observe(s))
+</script>
+</html>

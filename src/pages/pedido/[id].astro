@@ -1,0 +1,340 @@
+---
+export const prerender = false
+import { supabase } from '../../lib/supabase'
+
+const { id } = Astro.params
+
+// order_status_public es la única tabla con SELECT público — por diseño
+// no expone nombre/teléfono/dirección del cliente, solo el estado.
+const { data: tracking, error } = await supabase
+  .from('order_status_public')
+  .select('*')
+  .eq('order_id', id)
+  .maybeSingle()
+
+const notFound = !tracking || !!error
+const orderType = tracking?.order_type ?? 'pickup'
+const initialStatus = tracking?.status ?? 'pending'
+const orderShortId = id ? id.slice(-6).toUpperCase() : '000'
+
+// ← PAGOS: si venimos del checkout con transferencia, [slug].astro
+// nos pasa estos datos por la URL para armar el link de WhatsApp
+// aquí — evita la pelea entre window.open() y la redirección que
+// fallaba antes.
+const waNumber = Astro.url.searchParams.get('wa')
+const waAmount = Astro.url.searchParams.get('amt')
+const waOrderNum = Astro.url.searchParams.get('num')
+
+// El link de seguimiento va AL INICIO del mensaje del comprobante —
+// como este mensaje lo manda el cliente de cualquier forma, queda
+// guardado solo en su propio historial de WhatsApp, sin pedirle
+// una acción extra (a diferencia de "Guardar este link", que sigue
+// existiendo para los pedidos en efectivo, donde no hay mensaje).
+const trackingUrl = new URL(`/pedido/${id}`, Astro.url).toString()
+const waMessage = waNumber
+  ? `🔗 Mi pedido: ${trackingUrl}\n\nHola, ya transferí ${waAmount} de mi pedido ${waOrderNum}. Aquí está mi comprobante 👇 (adjunta la foto de tu transferencia en este chat)`
+  : ''
+const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(waMessage)}` : null
+
+// Si la tabla algún día incluye business_id, mostramos un link para
+// volver a pedir — si no existe la columna, simplemente se omite.
+let businessSlug = null
+if (!notFound && tracking?.business_id) {
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('slug')
+    .eq('id', tracking.business_id)
+    .maybeSingle()
+  businessSlug = biz?.slug ?? null
+}
+---
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Seguimiento de pedido #{orderShortId} — Fogón</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --cream:#FAF6F0;
+      --teja:#B04030;
+      --teja-dim:rgba(176,64,48,0.12);
+      --teja-border:rgba(176,64,48,0.3);
+      --text-dark:#2A1810;
+      --text-muted:#9A8878;
+    }
+    body{
+      background:var(--cream);color:var(--text-dark);font-family:'Inter',sans-serif;
+      min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      padding:32px;text-align:center;
+    }
+
+    .success-icon{
+      width:72px;height:72px;border-radius:18px;
+      background:var(--teja-dim);border:1.5px solid var(--teja-border);
+      display:flex;align-items:center;justify-content:center;
+      margin:0 auto 24px;font-size:30px;
+    }
+    .success-title{font-family:'Cormorant Garamond',serif;font-size:30px;font-style:italic;color:var(--text-dark);margin-bottom:8px}
+    .success-sub{font-size:14px;color:var(--text-muted);margin-bottom:20px;font-family:'Inter',sans-serif}
+    .success-num{font-family:'Cormorant Garamond',serif;font-size:44px;color:var(--teja);margin-bottom:24px}
+
+    .status-track{
+      display:flex;flex-direction:column;align-items:center;
+      gap:10px;margin:16px 0 24px;width:100%;max-width:300px;
+    }
+    .status-step{
+      display:flex;align-items:center;gap:12px;
+      width:100%;padding:10px 16px;border-radius:10px;
+      background:rgba(42,24,16,0.06);
+      font-family:'Inter',sans-serif;font-size:14px;
+      color:var(--text-muted);transition:all 0.4s ease;
+    }
+    .status-step.active{
+      background:rgba(176,64,48,0.1);
+      color:var(--teja);border:1px solid rgba(176,64,48,0.2);
+    }
+    .status-step.done{
+      background:rgba(74,222,128,0.08);
+      color:#2d7a4a;border:1px solid rgba(74,222,128,0.2);
+    }
+    .status-step.cancelled{
+      background:rgba(248,113,113,0.08);
+      color:#c0392b;border:1px solid rgba(248,113,113,0.2);
+    }
+    .step-icon{font-size:18px;flex-shrink:0}
+    .step-text{flex:1;text-align:left}
+    .step-label{font-weight:600;font-size:13px}
+    .step-sub{font-size:12px;opacity:0.7;margin-top:2px}
+    .status-pulse{
+      width:8px;height:8px;border-radius:50%;
+      background:var(--teja);flex-shrink:0;
+      animation:spulse 1.5s ease-in-out infinite;
+    }
+    @keyframes spulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(0.7)}}
+
+    .back-link{margin-top:8px;color:var(--teja);font-size:14px;text-decoration:underline;font-family:'Inter',sans-serif}
+    .not-found-note{font-size:14px;color:var(--text-muted);max-width:280px;line-height:1.6;margin-top:8px}
+    .wa-receipt-btn{
+      display:inline-flex;align-items:center;gap:8px;
+      background:#25D366;color:#fff;text-decoration:none;
+      border-radius:10px;padding:11px 20px;font-size:14px;font-weight:600;
+      font-family:'Inter',sans-serif;margin-bottom:20px;
+    }
+    .save-link-btn{
+      display:inline-flex;align-items:center;gap:8px;
+      background:none;color:var(--teja);border:1px solid var(--teja-border);
+      border-radius:10px;padding:9px 18px;font-size:13px;font-weight:600;
+      cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:20px;
+    }
+  </style>
+</head>
+<body>
+  {notFound ? (
+    <>
+      <div class="success-icon">❓</div>
+      <h1 class="success-title">No encontramos ese pedido</h1>
+      <p class="not-found-note">Revisa el link que te compartieron, o pregúntale al negocio directamente por tu pedido.</p>
+    </>
+  ) : (
+    <>
+      <div class="success-icon">🔥</div>
+      <h1 class="success-title" id="success-title">¡Pedido recibido!</h1>
+      <p class="success-sub">Tu número de pedido</p>
+      <p class="success-num">#{orderShortId}</p>
+
+      {waUrl && (
+        <a class="wa-receipt-btn" href={waUrl} target="_blank" rel="noopener">
+          📤 Enviar comprobante por WhatsApp
+        </a>
+      )}
+
+      <div>
+        <button class="save-link-btn" id="save-link-btn" onclick="saveTrackingLink()">
+          💾 Guardar este link
+        </button>
+      </div>
+
+      <div class="status-track">
+        <div class="status-step active" id="step-pending">
+          <span class="step-icon">🕐</span>
+          <div class="step-text">
+            <p class="step-label">Esperando confirmación</p>
+            <p class="step-sub">El negocio revisará tu pedido</p>
+          </div>
+          <span class="status-pulse" id="pulse-pending"></span>
+        </div>
+        <div class="status-step" id="step-confirmed">
+          <span class="step-icon">👨‍🍳</span>
+          <div class="step-text">
+            <p class="step-label">Confirmado — En preparación</p>
+            <p class="step-sub">Tu pedido está siendo preparado</p>
+          </div>
+        </div>
+        <div class="status-step" id="step-ready">
+          <span class="step-icon" id="ready-icon">🎉</span>
+          <div class="step-text">
+            <p class="step-label" id="ready-label">Listo</p>
+            <p class="step-sub" id="ready-sub">Tu pedido está listo</p>
+          </div>
+        </div>
+      </div>
+
+      {businessSlug && <a class="back-link" href={`/${businessSlug}`}>Hacer otro pedido</a>}
+    </>
+  )}
+
+  <div id="track-cfg" data-order-id={id} data-order-type={orderType} data-initial-status={initialStatus} hidden></div>
+
+  {!notFound && (
+    <script>
+      import { createClient } from '@supabase/supabase-js'
+
+      const sb = createClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUBLIC_SUPABASE_ANON_KEY)
+
+      const cfg = document.getElementById('track-cfg')
+
+      window.saveTrackingLink = async () => {
+        const url = window.location.href
+        const btn = document.getElementById('save-link-btn')
+        const orderNum = document.querySelector('.success-num')?.textContent ?? ''
+
+        // En celular: abre el menú nativo de compartir (WhatsApp,
+        // Notas, lo que sea) — la persona elige dónde se lo manda
+        // a sí misma. No necesita la API de WhatsApp Business.
+        if (navigator.share) {
+          try {
+            await navigator.share({ title: `Mi pedido ${orderNum} — Fogón`, url })
+            return
+          } catch (e) { /* canceló el share, no hacemos nada */ return }
+        }
+
+        // En escritorio (sin share nativo): copiamos el link.
+        try {
+          await navigator.clipboard.writeText(url)
+          const original = btn.textContent
+          btn.textContent = '¡Link copiado!'
+          setTimeout(() => { btn.textContent = original }, 2000)
+        } catch (e) {
+          btn.textContent = url
+        }
+      }
+      const orderId = cfg.dataset.orderId
+      const orderType = cfg.dataset.orderType
+      const initialStatus = cfg.dataset.initialStatus
+
+      let audioCtx = null
+      document.addEventListener('click', () => {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      }, { once: true })
+
+      function playStatusSound(status) {
+        try {
+          const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)()
+          audioCtx = ctx
+          const tones = {
+            confirmed: [660, 880],
+            ready:     [660, 880, 1100],
+            delivered: [880, 660],
+            cancelled: [440, 330]
+          }[status] || [800]
+
+          tones.forEach((freq, i) => {
+            const osc = ctx.createOscillator()
+            const gain = ctx.createGain()
+            osc.connect(gain); gain.connect(ctx.destination)
+            osc.frequency.value = freq
+            osc.type = 'sine'
+            const t = i * 0.16
+            gain.gain.setValueAtTime(0, ctx.currentTime + t)
+            gain.gain.linearRampToValueAtTime(0.35, ctx.currentTime + t + 0.02)
+            gain.gain.linearRampToValueAtTime(0, ctx.currentTime + t + 0.22)
+            osc.start(ctx.currentTime + t)
+            osc.stop(ctx.currentTime + t + 0.24)
+          })
+        } catch(e) {}
+      }
+
+      let lastTrackedStatus = null
+
+      function setStep(status) {
+        if (lastTrackedStatus !== null && status !== lastTrackedStatus) {
+          playStatusSound(status)
+        }
+        lastTrackedStatus = status
+
+        const steps = ['pending','confirmed','ready']
+        steps.forEach(s => {
+          const el = document.getElementById(`step-${s}`)
+          if (el) el.className = 'status-step'
+        })
+        const pulse = document.getElementById('pulse-pending')
+        if (pulse) pulse.style.display = 'none'
+
+        if (status === 'cancelled') {
+          const pending = document.getElementById('step-pending')
+          if (pending) { pending.className = 'status-step cancelled'; pending.querySelector('.step-label').textContent = 'Pedido cancelado'; pending.querySelector('.step-sub').textContent = 'Contacta al negocio para más info' }
+          document.getElementById('success-title').textContent = '❌ Pedido cancelado'
+          return
+        }
+
+        const order = ['pending','confirmed','ready','delivered']
+        const idx = order.indexOf(status)
+
+        if (idx >= 0) {
+          const el = document.getElementById('step-pending')
+          if (el) el.className = idx > 0 ? 'status-step done' : 'status-step active'
+          if (idx === 0 && pulse) pulse.style.display = 'block'
+        }
+        if (idx >= 1) {
+          const el = document.getElementById('step-confirmed')
+          if (el) el.className = idx > 1 ? 'status-step done' : 'status-step active'
+        }
+        if (idx >= 2) {
+          const el = document.getElementById('step-ready')
+          if (el) el.className = 'status-step active'
+          document.getElementById('success-title').textContent = '🎉 ¡Tu pedido está listo!'
+        }
+        if (status === 'delivered') {
+          const el = document.getElementById('step-ready')
+          if (el) el.className = 'status-step done'
+          document.getElementById('success-title').textContent = '✅ ¡Entregado! Buen provecho'
+        }
+      }
+
+      // Etiquetas según pickup/delivery
+      const readyLabel = document.getElementById('ready-label')
+      const readySub = document.getElementById('ready-sub')
+      const readyIcon = document.getElementById('ready-icon')
+      if (orderType === 'pickup') {
+        readyLabel.textContent = '¡Listo para recoger!'
+        readySub.textContent = 'Puedes pasar a recoger tu pedido'
+        readyIcon.textContent = '🏪'
+      } else {
+        readyLabel.textContent = '¡En camino!'
+        readySub.textContent = 'Tu pedido va en camino'
+        readyIcon.textContent = '🛵'
+      }
+
+      // Estado inicial (SSR) — no suena, solo lo más reciente cambia el sonido
+      setStep(initialStatus)
+
+      // ── Tiempo real ──────────────────────────────
+      // OJO: el filtro es por order_id, NO por id — ese fue el bug
+      // que hizo que nunca llegara la actualización al cliente.
+      sb.channel(`order-track-${orderId}`)
+        .on('postgres_changes', {
+          event: 'UPDATE', schema: 'public', table: 'order_status_public',
+          filter: `order_id=eq.${orderId}`
+        }, payload => {
+          setStep(payload.new.status)
+        })
+        .subscribe()
+    </script>
+  )}
+</body>
+</html>

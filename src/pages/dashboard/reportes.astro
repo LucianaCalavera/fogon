@@ -1,0 +1,347 @@
+---
+export const prerender = false
+import { createServerClient, parseCookieHeader } from '@supabase/ssr'
+
+const supabase = createServerClient(
+  import.meta.env.PUBLIC_SUPABASE_URL,
+  import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+  {
+    cookies: {
+      getAll() { return parseCookieHeader(Astro.request.headers.get('Cookie') ?? '') },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => Astro.cookies.set(name, value, options))
+      },
+    },
+  }
+)
+
+const { data: { user } } = await supabase.auth.getUser()
+if (!user) return Astro.redirect('/login')
+
+const { data: business } = await supabase
+  .from('businesses').select('*').eq('owner_id', user.id).single()
+if (!business) return Astro.redirect('/login')
+
+const { data: orders } = await supabase
+  .from('orders')
+  .select('*, order_items(name_snap, quantity, subtotal)')
+  .eq('business_id', business.id)
+  .eq('status', 'delivered')
+  .order('created_at', { ascending: false })
+
+const allOrders = orders ?? []
+
+const now = new Date()
+const startOfDay   = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x }
+const startOfWeek  = () => { const d = new Date(now); d.setDate(now.getDate() - now.getDay()); d.setHours(0,0,0,0); return d }
+const startOfMonth = () => new Date(now.getFullYear(), now.getMonth(), 1)
+const startOfYear  = () => new Date(now.getFullYear(), 0, 1)
+
+const filter = (from) => allOrders.filter(o => new Date(o.created_at) >= from)
+
+const todayOrders  = filter(startOfDay(now))
+const weekOrders   = filter(startOfWeek())
+const monthOrders  = filter(startOfMonth())
+const yearOrders   = filter(startOfYear())
+
+const sum = (arr) => arr.reduce((s, o) => s + Number(o.total), 0)
+const avg = (arr) => arr.length ? sum(arr) / arr.length : 0
+
+const last7 = Array.from({ length: 7 }, (_, i) => {
+  const d = new Date(now)
+  d.setDate(now.getDate() - (6 - i))
+  const dayStart = startOfDay(d)
+  const dayEnd   = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1)
+  const dayOrders = allOrders.filter(o => {
+    const t = new Date(o.created_at)
+    return t >= dayStart && t < dayEnd
+  })
+  return {
+    label: d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric' }),
+    total: sum(dayOrders),
+    count: dayOrders.length
+  }
+})
+
+const maxDay = Math.max(...last7.map(d => d.total), 1)
+
+const productMap = new Map()
+monthOrders.forEach(order => {
+  (order.order_items ?? []).forEach(item => {
+    const prev = productMap.get(item.name_snap) ?? { qty: 0, revenue: 0 }
+    productMap.set(item.name_snap, {
+      qty: prev.qty + item.quantity,
+      revenue: prev.revenue + Number(item.subtotal)
+    })
+  })
+})
+const topProducts = [...productMap.entries()]
+  .map(([name, data]) => ({ name, ...data }))
+  .sort((a, b) => b.qty - a.qty)
+  .slice(0, 5)
+
+const formatPrice = (n) => new Intl.NumberFormat('es-MX', { style:'currency', currency:'MXN' }).format(n)
+const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase()
+---
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reportes — {business.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-deep:       #050204;
+      --bg-body:       #0A0608;
+      --bg-surface:    #140A10;
+      --bg-hover:      #1C1018;
+      --text-1:        #FAF6F0;
+      --text-2:        #C4A882;
+      --text-3:        #7A5840;
+      --accent:        #B04030;
+      --accent-dim:    rgba(176,64,48,0.12);
+      --accent-border: rgba(176,64,48,0.28);
+      --border:        rgba(250,246,240,0.07);
+    }
+    body { background: var(--bg-body); color: var(--text-1); font-family: 'Inter', sans-serif; min-height: 100vh; font-size: 16px; }
+
+    .embers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+    .ember { position: absolute; border-radius: 50%; background: var(--accent); opacity: 0; bottom: -5px; box-shadow: 0 0 6px 2px rgba(176,64,48,0.4); animation: ember-rise linear infinite; }
+    @keyframes ember-rise {
+      0% { opacity: 0; transform: translateY(0) scale(0.5); }
+      10% { opacity: 0.7; } 70% { opacity: 0.45; }
+      100% { opacity: 0; transform: translateY(-80vh) translateX(var(--drift)) scale(1.2); }
+    }
+
+    .topbar { background: var(--bg-deep); border-bottom: 1px solid var(--accent-border); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 64px; position: sticky; top: 0; z-index: 10; }
+    .topbar-left { display: flex; align-items: center; gap: 14px; }
+    .logo-sm { width: 38px; height: 38px; border-radius: 10px; background: var(--accent-dim); border: 1px solid var(--accent-border); display: flex; align-items: center; justify-content: center; font-family: 'Cormorant Garamond', serif; font-size: 15px; font-weight: 700; color: var(--accent); overflow: hidden; }
+    .logo-sm img { width: 100%; height: 100%; object-fit: cover; }
+    .biz-name { font-family: 'Cormorant Garamond', serif; font-size: 19px; font-weight: 700; color: var(--text-1); }
+    .biz-sub  { font-size: 12px; color: var(--text-3); text-transform: uppercase; letter-spacing: 1.2px; margin-top: 1px; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .topbar-link { font-size: 13px; color: var(--text-3); text-decoration: none; }
+    .topbar-link:hover { color: var(--text-2); }
+    .logout-btn { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 13px; font-family: 'Inter', sans-serif; }
+    .logout-btn:hover { color: var(--text-2); }
+
+    .dash-nav { background: var(--bg-deep); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; gap: 4px; }
+    .dash-nav a { display: inline-block; padding: 14px 16px; font-size: 15px; font-weight: 500; color: var(--text-2); text-decoration: none; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; }
+    .dash-nav a.active, .dash-nav a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .main { max-width: 960px; margin: 0 auto; padding: 24px; position: relative; z-index: 1; }
+
+    /* Stats */
+    .stats-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-bottom: 24px; }
+    @media (min-width: 640px) { .stats-grid { grid-template-columns: repeat(4,1fr); } }
+    .stat-card { background: var(--bg-surface); border-radius: 14px; padding: 20px 22px; border: 1px solid var(--border); }
+    .stat-period { font-size: 12px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 10px; }
+    .stat-amount { font-family: 'Cormorant Garamond', serif; font-size: 26px; font-weight: 700; color: var(--accent); margin-bottom: 5px; }
+    .stat-count { font-size: 13px; color: var(--text-2); }
+    .stat-avg   { font-size: 13px; color: var(--text-3); margin-top: 3px; }
+
+    /* Secciones */
+    .section { background: var(--bg-surface); border-radius: 14px; border: 1px solid var(--border); padding: 24px; margin-bottom: 16px; }
+    .section-title { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 700; color: var(--text-1); margin-bottom: 20px; }
+
+    /* Gráfica */
+    .bar-chart { display: flex; align-items: flex-end; gap: 8px; height: 130px; padding-bottom: 30px; position: relative; }
+    .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0; height: 100%; justify-content: flex-end; position: relative; }
+    .bar {
+      width: 100%; border-radius: 4px 4px 0 0;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-border);
+      transition: background 0.2s;
+      position: relative; min-height: 3px;
+    }
+    .bar:hover { background: rgba(176,64,48,0.28); }
+    .bar-value {
+      position: absolute; top: -22px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px; color: var(--accent); font-weight: 600;
+      white-space: nowrap; opacity: 0; transition: opacity 0.15s;
+    }
+    .bar:hover .bar-value { opacity: 1; }
+    .bar-label { position: absolute; bottom: -26px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--text-3); white-space: nowrap; }
+
+    /* Top productos */
+    .top-product { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .top-product:last-child { border-bottom: none; }
+    .top-rank { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 700; color: var(--text-3); width: 28px; flex-shrink: 0; }
+    .top-rank.gold { color: var(--accent); }
+    .top-name { flex: 1; font-size: 15px; font-weight: 500; color: var(--text-1); }
+    .top-qty { font-size: 14px; color: var(--text-2); }
+    .top-revenue { font-size: 15px; font-weight: 600; color: var(--accent); }
+
+    .progress-bar { height: 4px; background: var(--bg-deep); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+
+    .empty { text-align: center; padding: 60px; color: var(--text-3); }
+
+    /* Botón imprimir */
+    .print-btn{
+      display:flex;align-items:center;gap:8px;
+      background:var(--accent-dim);color:var(--accent);
+      border:1px solid var(--accent-border);border-radius:10px;
+      padding:10px 18px;font-size:14px;font-weight:600;
+      cursor:pointer;font-family:'Inter',sans-serif;
+      transition:opacity 0.15s;text-decoration:none;
+    }
+    .print-btn:hover{opacity:0.8}
+
+    /* Estilos de impresión */
+    @media print {
+      body{background:#fff !important;color:#1a1a1a !important;font-size:13px}
+      .embers,.topbar,.dash-nav,.print-btn{display:none !important}
+      .main{padding:0;max-width:100%}
+      .stat-card{background:#f9f9f9 !important;border:1px solid #ddd !important;break-inside:avoid}
+      .stat-period{color:#666 !important}
+      .stat-amount{color:#B04030 !important}
+      .stat-count,.stat-avg{color:#444 !important}
+      .section{background:#f9f9f9 !important;border:1px solid #ddd !important;break-inside:avoid;page-break-inside:avoid}
+      .section-title{color:#1a1a1a !important}
+      .bar{background:#f2d5d0 !important;border:1px solid #B04030 !important;opacity:1}      
+      .top-name{color:#1a1a1a !important}
+      .top-rank{color:#999 !important}
+      .top-rank.gold{color:#B04030 !important}
+      .top-qty{color:#555 !important}
+      .top-revenue{color:#B04030 !important}
+      .progress-fill{background:#B04030 !important}
+      .progress-bar{background:#eee !important}
+      .top-product{border-bottom-color:#eee !important}
+      .print-header{display:block !important}
+    }
+    .print-header{display:none;margin-bottom:24px}
+    .print-header h1{font-family:'Cormorant Garamond',serif;font-size:24px;color:#B04030}
+    .print-header p{font-size:12px;color:#888;margin-top:4px}
+
+    .empty p { font-family: 'Cormorant Garamond', serif; font-size: 18px; color: var(--text-2); margin-top: 10px; }
+  </style>
+</head>
+
+<body>
+  <div class="embers" aria-hidden="true">
+    <span class="ember" style="left:8%;width:5px;height:5px;animation-duration:7s;animation-delay:0s;--drift:25px"></span>
+    <span class="ember" style="left:35%;width:4px;height:4px;animation-duration:10s;animation-delay:1.5s;--drift:-20px"></span>
+    <span class="ember" style="left:65%;width:5px;height:5px;animation-duration:9s;animation-delay:0.3s;--drift:22px"></span>
+    <span class="ember" style="left:88%;width:4px;height:4px;animation-duration:11s;animation-delay:2s;--drift:-15px"></span>
+  </div>
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo-sm">
+        {business.logo_url ? <img src={business.logo_url} alt="" /> : initials}
+      </div>
+      <div>
+        <p class="biz-name">{business.name}</p>
+        <p class="biz-sub">Reportes de ventas</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button class="print-btn" onclick="window.print()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Imprimir / PDF</button>
+      <a href={`/${business.slug}`} target="_blank" class="topbar-link">Ver tienda ↗</a>
+      <button class="logout-btn" onclick="handleLogout()">Salir</button>
+    </div>
+  </header>
+
+  <nav class="dash-nav">
+    <a href="/dashboard">Pedidos</a>
+    <a href="/dashboard/menu">Menú</a>
+    <a href="/dashboard/reportes" class="active">Reportes</a>
+  </nav>
+
+  <main class="main">
+    <div class="print-header">
+      <h1>Reporte de ventas — {business.name}</h1>
+      <p>Generado el {new Date().toLocaleDateString('es-MX', {year:'numeric',month:'long',day:'numeric'})}</p>
+    </div>
+
+    {allOrders.length === 0 && (
+      <div class="empty">
+        <p style="font-size:40px">📊</p>
+        <p>Los reportes aparecerán cuando tengas pedidos entregados</p>
+      </div>
+    )}
+
+    {allOrders.length > 0 && (<>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <p class="stat-period">Hoy</p>
+          <p class="stat-amount">{formatPrice(sum(todayOrders))}</p>
+          <p class="stat-count">{todayOrders.length} pedidos</p>
+          <p class="stat-avg">Ticket: {formatPrice(avg(todayOrders))}</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-period">Esta semana</p>
+          <p class="stat-amount">{formatPrice(sum(weekOrders))}</p>
+          <p class="stat-count">{weekOrders.length} pedidos</p>
+          <p class="stat-avg">Ticket: {formatPrice(avg(weekOrders))}</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-period">Este mes</p>
+          <p class="stat-amount">{formatPrice(sum(monthOrders))}</p>
+          <p class="stat-count">{monthOrders.length} pedidos</p>
+          <p class="stat-avg">Ticket: {formatPrice(avg(monthOrders))}</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-period">Este año</p>
+          <p class="stat-amount">{formatPrice(sum(yearOrders))}</p>
+          <p class="stat-count">{yearOrders.length} pedidos</p>
+          <p class="stat-avg">Ticket: {formatPrice(avg(yearOrders))}</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <p class="section-title">Ventas — últimos 7 días</p>
+        <div class="bar-chart">
+          {last7.map(day => (
+            <div class="bar-wrap">
+              <div
+                class="bar"
+                style={`height:${Math.max((day.total / maxDay) * 100, day.total > 0 ? 4 : 0)}%`}
+              >
+                <span class="bar-value">{formatPrice(day.total)}</span>
+              </div>
+              <span class="bar-label">{day.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {topProducts.length > 0 && (
+        <div class="section">
+          <p class="section-title">Más vendidos — este mes</p>
+          {topProducts.map((product, i) => (
+            <div class="top-product">
+              <span class={`top-rank ${i === 0 ? 'gold' : ''}`}>{i + 1}</span>
+              <div style="flex:1;min-width:0">
+                <p class="top-name">{product.name}</p>
+                <div class="progress-bar">
+                  <div class="progress-fill" style={`width:${(product.qty / topProducts[0].qty) * 100}%`}></div>
+                </div>
+              </div>
+              <p class="top-qty" style="margin-right:14px">{product.qty} uds</p>
+              <p class="top-revenue">{formatPrice(product.revenue)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+    </>)}
+  </main>
+</body>
+
+<script>
+  import { createBrowserClient } from '@supabase/ssr'
+  const sb = createBrowserClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.PUBLIC_SUPABASE_ANON_KEY
+  )
+  window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
+</script>
+</html>

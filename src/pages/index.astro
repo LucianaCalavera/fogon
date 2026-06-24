@@ -1,17 +1,306 @@
 ---
-
+export const prerender = false
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Fogón — Pedidos directos, sin comisión</title>
+  <meta name="description" content="Tu propio sistema de pedidos para tu restaurante. Sin comisión por venta, renta fija, el dinero va directo a tu cuenta."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=Inter:wght@400;500;600;700;800&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg-deep:#050204;
+      --bg-body:#0A0608;
+      --bg-surface:#140A10;
+      --text-1:#FAF6F0;
+      --text-2:#C4A882;
+      --text-3:#7A5840;
+      --accent:#B04030;
+      --accent-dim:rgba(176,64,48,0.12);
+      --accent-border:rgba(176,64,48,0.28);
+      --border:rgba(250,246,240,0.08);
+      --paper:#F3EEE4;
+      --paper-ink:#241712;
+      --paper-ink-2:#7d6a58;
+      --loss:#A23324;
+      --gain:#2d6a45;
+    }
+    body{
+      background:var(--bg-body);color:var(--text-1);font-family:'Inter',sans-serif;
+      line-height:1.55;overflow-x:hidden;
+    }
+    section{padding:96px 24px}
+    @media(max-width:720px){section{padding:60px 20px}}
+    .wrap{max-width:1040px;margin:0 auto}
+    .eyebrow{
+      font-size:12px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;
+      color:var(--text-3);margin-bottom:18px;display:block;
+    }
+    h1,h2,h3{color:var(--text-1)}
+    .btn-primary{
+      display:inline-flex;align-items:center;gap:8px;
+      background:var(--accent);color:var(--bg-deep);
+      border:none;border-radius:9px;padding:15px 28px;
+      font-size:15px;font-weight:700;text-decoration:none;
+      font-family:'Inter',sans-serif;transition:opacity 0.15s;
+    }
+    .btn-primary:hover{opacity:0.9}
+    .btn-ghost{
+      color:var(--text-2);text-decoration:none;font-size:14px;font-weight:600;
+      border-bottom:1px solid var(--accent-border);padding-bottom:2px;
+    }
+
+    /* ── Nav ──────────────────────────────────────── */
+    nav{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:22px 24px;max-width:1040px;margin:0 auto;
+    }
+    .nav-logo{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:38px;font-weight:700;color:var(--text-1);text-decoration:none}
+    .nav-cta{
+      background:none;color:var(--text-2);border:1px solid var(--border);
+      border-radius:8px;padding:9px 18px;font-size:14px;font-weight:600;
+      text-decoration:none;
+    }
+
+    /* ── Hero ─────────────────────────────────────── */
+    .hero{padding-top:32px;padding-bottom:24px;text-align:center}
+    .hero h1{
+      font-size:clamp(32px,5.2vw,52px);line-height:1.12;font-weight:800;
+      letter-spacing:-0.5px;max-width:780px;margin:0 auto 22px;
+    }
+    .hero-sub{font-size:17px;color:var(--text-2);max-width:520px;margin:0 auto 30px;line-height:1.6}
+    .hero-ctas{display:flex;align-items:center;justify-content:center;gap:22px;flex-wrap:wrap;margin-bottom:64px}
+
+    /* ── Tickets ──────────────────────────────────── */
+    .ticket-kicker{text-align:center;color:var(--text-3);font-size:14px;margin-bottom:36px}
+    .ticket-pair{
+      display:flex;justify-content:center;align-items:flex-start;gap:28px;flex-wrap:wrap;
+    }
+    .ticket{
+      width:260px;background:var(--paper);color:var(--paper-ink);
+      font-family:'Courier Prime',monospace;font-size:13.5px;
+      padding:26px 22px 22px;position:relative;
+      box-shadow:0 18px 40px -10px rgba(0,0,0,0.5);
+      transform:rotate(-1.2deg);
+    }
+    .ticket.fogon-ticket{transform:rotate(1.2deg);margin-top:18px}
+    .ticket::before,.ticket::after{
+      content:'';position:absolute;left:0;right:0;height:10px;
+      background-image:linear-gradient(135deg,var(--bg-body) 50%,transparent 50%),linear-gradient(45deg,var(--bg-body) 50%,transparent 50%);
+      background-size:14px 14px;background-repeat:repeat-x;
+    }
+    .ticket::before{top:-1px;background-position:0 0;transform:scaleY(-1)}
+    .ticket::after{bottom:-1px}
+    .ticket-head{font-weight:700;letter-spacing:1.5px;font-size:12px;text-align:center;margin-bottom:16px}
+    .ticket-line{display:flex;justify-content:space-between;padding:4px 0}
+    .ticket-line.loss{color:var(--loss);font-weight:700}
+    .ticket-line.gain{color:var(--gain);font-weight:700}
+    .ticket-perf{border-top:1px dashed var(--paper-ink-2);margin:14px 0;opacity:0.5}
+    .ticket-total{display:flex;justify-content:space-between;font-weight:700;font-size:16px}
+    .ticket-total.win{color:var(--gain)}
+    .ticket-note{
+      text-align:center;margin-top:40px;color:var(--text-2);font-size:15px;
+    }
+    .ticket-note strong{color:var(--text-1)}
+
+    /* ── Cómo funciona ────────────────────────────── */
+    .section-head{margin-bottom:48px;max-width:480px}
+    .section-head h2{font-size:clamp(24px,3vw,30px);font-weight:800;letter-spacing:-0.3px}
+    .flow{display:flex;flex-direction:column;gap:0;max-width:560px;margin:0 auto}
+    .flow-step{display:flex;gap:18px;padding:20px 0;border-bottom:1px solid var(--border);text-align:left}
+    .flow-step:last-child{border-bottom:none}
+    .flow-tag{
+      flex-shrink:0;width:30px;height:30px;border-radius:7px;
+      background:var(--accent-dim);border:1px solid var(--accent-border);color:var(--accent);
+      display:flex;align-items:center;justify-content:center;
+      font-size:13px;font-weight:700;font-family:'Courier Prime',monospace;
+    }
+    .flow-step h3{font-size:16px;font-weight:700;margin-bottom:4px}
+    .flow-step p{color:var(--text-3);font-size:14px;line-height:1.6}
+
+    /* ── Features ─────────────────────────────────── */
+    .features-section{background:var(--bg-surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+    .features-list{display:grid;grid-template-columns:1fr 1fr;gap:0;max-width:760px;margin:0 auto;border-top:1px solid var(--border)}
+    @media(max-width:640px){.features-list{grid-template-columns:1fr}}
+    .feature-row{
+      padding:24px 4px;border-bottom:1px solid var(--border);text-align:left;
+    }
+    .features-list .feature-row:nth-child(odd){border-right:1px solid var(--border);padding-right:28px}
+    @media(max-width:640px){.features-list .feature-row:nth-child(odd){border-right:none}}
+    .feature-row h3{font-size:15px;font-weight:700;margin-bottom:5px;display:flex;align-items:center;gap:8px}
+    .feature-row h3::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--accent);display:inline-block}
+    .feature-row p{font-size:13.5px;color:var(--text-3);line-height:1.55}
+
+    /* ── Precio ───────────────────────────────────── */
+    .price-ticket{
+      width:300px;margin:0 auto;background:var(--paper);color:var(--paper-ink);
+      font-family:'Courier Prime',monospace;padding:30px 26px 26px;position:relative;
+      box-shadow:0 18px 40px -10px rgba(0,0,0,0.5);
+    }
+    .price-ticket::before,.price-ticket::after{
+      content:'';position:absolute;left:0;right:0;height:10px;
+      background-image:linear-gradient(135deg,var(--bg-body) 50%,transparent 50%),linear-gradient(45deg,var(--bg-body) 50%,transparent 50%);
+      background-size:14px 14px;background-repeat:repeat-x;
+    }
+    .price-ticket::before{top:-1px;transform:scaleY(-1)}
+    .price-ticket::after{bottom:-1px}
+    .price-head{font-weight:700;letter-spacing:1.5px;font-size:13px;text-align:center;margin-bottom:20px}
+    .price-line{display:flex;justify-content:space-between;font-size:14px;padding:7px 0}
+    .price-perf{border-top:1px dashed var(--paper-ink-2);margin:14px 0;opacity:0.5}
+    .price-total{display:flex;justify-content:space-between;font-weight:700;font-size:16px;color:var(--gain)}
+    .price-cta-wrap{text-align:center;margin-top:32px}
+
+    /* ── CTA final ────────────────────────────────── */
+    .final-cta{text-align:center;position:relative}
+    .final-flame{width:120px;height:168px;margin:0 auto 12px;filter:drop-shadow(0 0 28px rgba(255,107,53,0.3))}
+    .final-cta h2{font-size:clamp(24px,3.2vw,32px);font-weight:800;margin-bottom:14px;letter-spacing:-0.3px}
+    .final-cta p{color:var(--text-2);font-size:15px;margin-bottom:30px;max-width:420px;margin-left:auto;margin-right:auto}
+
+    /* ── Footer ───────────────────────────────────── */
+    footer{
+      padding:28px 24px;text-align:center;color:var(--text-3);font-size:13px;
+      border-top:1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a class="nav-logo" href="/">Fogón</a>
+    <a class="nav-cta" href="/registro">Crear mi negocio</a>
+  </nav>
+
+  <!-- ── Hero + ticket comparativo ────────────────── -->
+  <header class="hero wrap">
+    <span class="eyebrow">Para restaurantes y negocios de comida en Chihuahua</span>
+    <h1>Tu pedido. Tu dinero. Sin comisión.</h1>
+    <p class="hero-sub">Las apps de delivery se quedan con hasta 30% de cada venta. Fogón cobra una renta fija — el resto es completamente tuyo.</p>
+    <div class="hero-ctas">
+      <a class="btn-primary" href="/registro">Crea tu negocio gratis →</a>
+      <a class="btn-ghost" href="#precio">Ver precio</a>
+    </div>
+  </header>
+
+  <section style="padding-top:0">
+    <div class="wrap">
+      <p class="ticket-kicker">Dos tickets, el mismo pedido de $10,000 al mes</p>
+      <div class="ticket-pair">
+        <div class="ticket">
+          <p class="ticket-head">APPS DE DELIVERY</p>
+          <div class="ticket-line"><span>Subtotal pedidos</span><span>$10,000.00</span></div>
+          <div class="ticket-line loss"><span>Comisión (25%)</span><span>-$2,500.00</span></div>
+          <div class="ticket-perf"></div>
+          <div class="ticket-total"><span>TE QUEDAS</span><span>$7,500.00</span></div>
+        </div>
+        <div class="ticket fogon-ticket">
+          <p class="ticket-head">FOGÓN</p>
+          <div class="ticket-line"><span>Subtotal pedidos</span><span>$10,000.00</span></div>
+          <div class="ticket-line gain"><span>Renta fija</span><span>-$499.00</span></div>
+          <div class="ticket-perf"></div>
+          <div class="ticket-total win"><span>TE QUEDAS</span><span>$9,501.00</span></div>
+        </div>
+      </div>
+      <p class="ticket-note"><strong>$2,001 más</strong> en tu bolsillo cada mes, vendiendo exactamente lo mismo.</p>
+    </div>
+  </section>
+
+  <!-- ── Cómo funciona ────────────────────────────── -->
+  <section>
+    <div class="wrap" style="text-align:center">
+      <div class="section-head" style="margin:0 auto 48px">
+        <h2>De cero a recibiendo pedidos</h2>
+      </div>
+      <div class="flow">
+        <div class="flow-step">
+          <span class="flow-tag">01</span>
+          <div>
+            <h3>Crea tu cuenta</h3>
+            <p>Pon el nombre de tu negocio y tu correo. Menos de un minuto, sin tarjeta de crédito.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <span class="flow-tag">02</span>
+          <div>
+            <h3>Sube tu menú</h3>
+            <p>Agrega tus productos, precios y fotos cuando quieras — sin pedirle nada a nadie.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <span class="flow-tag">03</span>
+          <div>
+            <h3>Recibe pedidos</h3>
+            <p>Comparte tu link. Los pedidos llegan a tu panel en tiempo real, listos para confirmar.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Features ─────────────────────────────────── -->
+  <section class="features-section">
+    <div class="wrap">
+      <div class="section-head" style="margin:0 auto 8px;text-align:center;max-width:none">
+        <h2>Todo lo que ya incluye</h2>
+      </div>
+      <div class="features-list">
+        <div class="feature-row">
+          <h3>Pedidos en tiempo real</h3>
+          <p>Tu cliente ve cuando confirmas, sin que tengas que avisarle por fuera.</p>
+        </div>
+        <div class="feature-row">
+          <h3>Tu menú, tus reglas</h3>
+          <p>Agrega categorías y productos cuando quieras, directo desde tu panel.</p>
+        </div>
+        <div class="feature-row">
+          <h3>Horario automático</h3>
+          <p>Se abre y cierra solo según tu horario — o pausa manual si necesitas un descanso.</p>
+        </div>
+        <div class="feature-row">
+          <h3>Cobra como ya cobras</h3>
+          <p>Efectivo, CLABE, DiMo o CoDi. El dinero va directo a tu cuenta, nunca pasa por Fogón.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Precio ───────────────────────────────────── -->
+  <section id="precio">
+    <div class="wrap" style="text-align:center">
+      <div class="price-ticket">
+        <p class="price-head">TU RENTA, SIN SORPRESAS</p>
+        <div class="price-line"><span>Instalación</span><span>$5,000.00</span></div>
+        <div class="price-line"><span>Mensualidad</span><span>$499.00</span></div>
+        <div class="price-perf"></div>
+        <div class="price-total"><span>COMISIÓN POR VENTA</span><span>$0.00</span></div>
+      </div>
+      <div class="price-cta-wrap">
+        <a class="btn-primary" href="/registro">Crear mi cuenta</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CTA final ────────────────────────────────── -->
+  <section class="final-cta">
+    <div class="wrap">
+      <canvas id="fogonCanvas" class="final-flame" width="200" height="280"></canvas>
+      <h2>Tu negocio. Tus reglas. Tu dinero.</h2>
+      <p>Crea tu cuenta hoy y empieza a recibir pedidos sin pagarle un peso de comisión.</p>
+      <a class="btn-primary" href="/registro">Crear mi negocio gratis →</a>
+    </div>
+  </section>
+
+  <footer>
+    Fogón — hecho en Chihuahua, para negocios de Chihuahua.
+  </footer>
+
+  <script>
+    import { initFlameCanvas } from '../lib/flame-canvas'
+    initFlameCanvas('fogonCanvas')
+  </script>
+</body>
 </html>

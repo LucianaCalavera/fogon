@@ -1,0 +1,143 @@
+---
+export const prerender = false
+import '../styles/global.css'
+---
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Entrar — Fogón</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg-body:       #0A0608;
+      --bg-surface:    #140A10;
+      --bg-input:      #1C1018;
+      --text-1:        #FAF6F0;
+      --text-2:        #C4A882;
+      --text-3:        #7A5840;
+      --accent:        #B04030;
+      --accent-dim:    rgba(176,64,48,0.12);
+      --accent-border: rgba(176,64,48,0.28);
+      --border:        rgba(250,246,240,0.08);
+    }
+    body{
+      min-height:100vh;background:var(--bg-body);color:var(--text-1);
+      font-family:'Inter',sans-serif;display:flex;align-items:center;
+      justify-content:center;padding:24px;
+    }
+    .wrap{width:100%;max-width:420px}
+
+    .hero{text-align:center;margin-bottom:44px}
+    .hero-flame{font-size:52px;margin:0 0 12px}
+    .hero-title{
+      font-family:'Cormorant Garamond',serif;font-style:italic;
+      font-size:36px;font-weight:600;color:var(--text-1);
+      margin:0 0 6px;letter-spacing:0.5px;
+    }
+    .hero-sub{color:var(--text-3);font-size:14px;margin:0}
+
+    .card{background:var(--bg-surface);border-radius:18px;padding:36px;border:1px solid var(--border)}
+    .card-title{
+      font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;
+      color:var(--text-1);margin:0 0 28px;
+    }
+    .fields{display:flex;flex-direction:column;gap:18px}
+    .field label{font-size:13px;color:var(--text-3);display:block;margin-bottom:7px;letter-spacing:0.3px}
+    .field input{
+      width:100%;background:var(--bg-input);color:var(--text-1);
+      border:1px solid var(--border);border-radius:10px;
+      padding:13px 16px;font-size:15px;outline:none;
+      font-family:'Inter',sans-serif;transition:border-color 0.15s;
+    }
+    .field input:focus{border-color:var(--accent-border)}
+    .field input::placeholder{color:rgba(250,246,240,0.2)}
+
+    .error-msg{display:none;color:#f87171;font-size:13px;margin:0}
+
+    .login-btn{
+      width:100%;background:var(--accent);color:#FAF6F0;
+      font-weight:600;padding:15px;border-radius:10px;border:none;
+      cursor:pointer;font-size:15px;margin-top:6px;
+      font-family:'Inter',sans-serif;transition:opacity 0.15s;
+      letter-spacing:0.3px;
+    }
+    .login-btn:hover{opacity:0.9}
+    .login-btn:disabled{opacity:0.5;cursor:default}
+
+    .footer-note{text-align:center;color:var(--text-3);font-size:13px;margin-top:28px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <p class="hero-flame">🔥</p>
+      <h1 class="hero-title">Fogón</h1>
+      <p class="hero-sub">Panel del restaurantero</p>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">Entrar a tu negocio</h2>
+      <div class="fields">
+        <div class="field">
+          <label for="email">Correo electrónico</label>
+          <input id="email" type="email" placeholder="admin@tunegocio.mx" autocomplete="email" />
+        </div>
+        <div class="field">
+          <label for="password">Contraseña</label>
+          <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <p id="login-error" class="error-msg"></p>
+        <button id="login-btn" class="login-btn" onclick="handleLogin()">Entrar</button>
+      </div>
+    </div>
+
+    <p class="footer-note">Fogón — Pedidos directos sin comisión</p>
+  </div>
+</body>
+
+<script>
+  import { createClient } from '@supabase/supabase-js'
+
+  const sb = createClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.PUBLIC_SUPABASE_ANON_KEY
+  )
+
+  document.getElementById('password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleLogin()
+  })
+
+  window.handleLogin = async () => {
+    const email    = document.getElementById('email').value.trim()
+    const password = document.getElementById('password').value
+    const errorEl  = document.getElementById('login-error')
+    const btn      = document.getElementById('login-btn')
+
+    if (!email || !password) {
+      errorEl.textContent = 'Ingresa tu correo y contraseña'
+      errorEl.style.display = 'block'
+      return
+    }
+
+    errorEl.style.display = 'none'
+    btn.disabled = true
+    btn.textContent = 'Entrando...'
+
+    const { error } = await sb.auth.signInWithPassword({ email, password })
+
+    if (error) {
+      errorEl.textContent = 'Correo o contraseña incorrectos'
+      errorEl.style.display = 'block'
+      btn.disabled = false
+      btn.textContent = 'Entrar'
+      return
+    }
+
+    window.location.href = '/dashboard'
+  }
+</script>
+</html>

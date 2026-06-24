@@ -1,0 +1,198 @@
+---
+export const prerender = false
+---
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Crea tu negocio — Fogón</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg-deep:#050204;
+      --bg-body:#0A0608;
+      --bg-surface:#140A10;
+      --text-1:#FAF6F0;
+      --text-2:#C4A882;
+      --text-3:#7A5840;
+      --accent:#B04030;
+      --accent-dim:rgba(176,64,48,0.12);
+      --accent-border:rgba(176,64,48,0.28);
+      --border:rgba(250,246,240,0.07);
+      --danger:#f87171;
+      --danger-dim:rgba(248,113,113,0.1);
+      --danger-border:rgba(248,113,113,0.25);
+    }
+    body{
+      background:var(--bg-body);color:var(--text-1);font-family:'Inter',sans-serif;
+      min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+      position:relative;overflow-x:hidden;
+    }
+
+    .embers{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+    .ember{position:absolute;border-radius:50%;background:var(--accent);opacity:0;bottom:-5px;box-shadow:0 0 6px 2px rgba(176,64,48,0.4);animation:ember-rise linear infinite}
+    @keyframes ember-rise{0%{opacity:0;transform:translateY(0) scale(0.5)}10%{opacity:0.7}70%{opacity:0.45}100%{opacity:0;transform:translateY(-80vh) scale(1.2)}}
+
+    .card{
+      position:relative;z-index:1;width:100%;max-width:420px;
+      background:var(--bg-surface);border:1px solid var(--border);border-radius:18px;
+      padding:36px 32px;
+    }
+    .logo-row{text-align:center;margin-bottom:24px}
+    .flame-canvas{
+      display:block;margin:0 auto 4px;width:100px;height:140px;
+      filter:drop-shadow(0 0 20px rgba(255,107,53,0.3));
+    }
+    h1{font-family:'Cormorant Garamond',serif;font-size:25px;font-weight:700;text-align:center;margin-bottom:6px}
+    .subtitle{font-size:14px;color:var(--text-3);text-align:center;margin-bottom:26px;line-height:1.5}
+
+    .field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+    .field-label{font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px}
+    .field-input{
+      background:var(--bg-deep);color:var(--text-1);border:1px solid var(--border);
+      border-radius:8px;padding:11px 13px;font-size:15px;outline:none;font-family:'Inter',sans-serif;
+      transition:border-color 0.15s;width:100%;
+    }
+    .field-input:focus{border-color:var(--accent-border)}
+    .field-input::placeholder{color:var(--text-3)}
+    .field-hint{font-size:12px;color:var(--text-3)}
+
+    .submit-btn{
+      width:100%;margin-top:8px;background:var(--accent);color:var(--bg-deep);
+      border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;
+      cursor:pointer;font-family:'Inter',sans-serif;transition:opacity 0.15s;
+    }
+    .submit-btn:hover{opacity:0.9}
+    .submit-btn:disabled{opacity:0.6;cursor:not-allowed}
+
+    .error-msg{
+      display:none;background:var(--danger-dim);border:1px solid var(--danger-border);
+      color:var(--danger);font-size:13px;padding:10px 14px;border-radius:8px;margin-bottom:16px;
+    }
+
+    .login-link{text-align:center;font-size:13px;color:var(--text-3);margin-top:20px}
+    .login-link a{color:var(--accent);text-decoration:none;font-weight:600}
+    .login-link a:hover{text-decoration:underline}
+  </style>
+</head>
+<body>
+  <div class="embers" aria-hidden="true">
+    <span class="ember" style="left:8%;width:4px;height:4px;animation-duration:8s;animation-delay:0s"></span>
+    <span class="ember" style="left:30%;width:3px;height:3px;animation-duration:10s;animation-delay:1.8s"></span>
+    <span class="ember" style="left:62%;width:4px;height:4px;animation-duration:9s;animation-delay:0.9s"></span>
+    <span class="ember" style="left:85%;width:3px;height:3px;animation-duration:11s;animation-delay:2.6s"></span>
+  </div>
+
+  <div class="card">
+    <div class="logo-row">
+      <canvas id="fogonCanvas" class="flame-canvas" width="200" height="280"></canvas>
+      <h1>Crea tu negocio en Fogón</h1>
+      <p class="subtitle">Tu propio sistema de pedidos, sin comisión por venta. Listo en menos de un minuto.</p>
+    </div>
+
+    <p class="error-msg" id="error-msg"></p>
+
+    <div class="field">
+      <label class="field-label">Nombre del negocio</label>
+      <input type="text" id="business-name" class="field-input" placeholder="Tacos El Compa" autocomplete="organization"/>
+    </div>
+
+    <div class="field">
+      <label class="field-label">Correo</label>
+      <input type="email" id="email" class="field-input" placeholder="tu@correo.com" autocomplete="email"/>
+    </div>
+
+    <div class="field">
+      <label class="field-label">Contraseña</label>
+      <input type="password" id="password" class="field-input" placeholder="Mínimo 8 caracteres" autocomplete="new-password"/>
+    </div>
+
+    <div class="field">
+      <label class="field-label">WhatsApp (opcional)</label>
+      <input type="tel" id="whatsapp" class="field-input" placeholder="5216141234567" autocomplete="tel"/>
+      <span class="field-hint">Con código de país, sin + ni espacios. Lo puedes agregar después si no lo tienes a la mano.</span>
+    </div>
+
+    <button class="submit-btn" id="submit-btn" onclick="handleRegister()">Crear mi cuenta</button>
+
+    <p class="login-link">¿Ya tienes cuenta? <a href="/login">Inicia sesión</a></p>
+  </div>
+
+  <script>
+    import { createBrowserClient } from '@supabase/ssr'
+    import { initFlameCanvas } from '../lib/flame-canvas'
+
+    initFlameCanvas('fogonCanvas')
+
+    const sb = createBrowserClient(
+      import.meta.env.PUBLIC_SUPABASE_URL,
+      import.meta.env.PUBLIC_SUPABASE_ANON_KEY
+    )
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg')
+      el.textContent = msg
+      el.style.display = 'block'
+    }
+
+    function hideError() {
+      document.getElementById('error-msg').style.display = 'none'
+    }
+
+    function resetButton(btn) {
+      btn.disabled = false
+      btn.textContent = 'Crear mi cuenta'
+    }
+
+    window.handleRegister = async () => {
+      hideError()
+
+      const businessName = document.getElementById('business-name').value.trim()
+      const email = document.getElementById('email').value.trim()
+      const password = document.getElementById('password').value
+      const whatsapp = document.getElementById('whatsapp').value.trim()
+      const btn = document.getElementById('submit-btn')
+
+      if (!businessName) { showError('Escribe el nombre de tu negocio'); return }
+      if (!email) { showError('Escribe tu correo'); return }
+      if (password.length < 8) { showError('La contraseña debe tener al menos 8 caracteres'); return }
+
+      btn.disabled = true
+      btn.textContent = 'Creando tu cuenta...'
+
+      try {
+        const res = await fetch('/api/registro', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ businessName, email, password, whatsappNumber: whatsapp || null })
+        })
+        const data = await res.json()
+
+        if (!res.ok) {
+          showError(data.error || 'Algo salió mal, intenta de nuevo')
+          resetButton(btn)
+          return
+        }
+
+        // Inicia sesión en el navegador (esto es lo que pone la cookie
+        // que el dashboard necesita para reconocerte como dueño)
+        const { error: signInError } = await sb.auth.signInWithPassword({ email, password })
+        if (signInError) {
+          showError('Tu cuenta se creó, pero hubo un problema al iniciar sesión. Ve a /login')
+          resetButton(btn)
+          return
+        }
+
+        window.location.href = '/dashboard/menu'
+      } catch (err) {
+        showError('No se pudo conectar, intenta de nuevo')
+        resetButton(btn)
+      }
+    }
+  </script>
+</body>
+</html>

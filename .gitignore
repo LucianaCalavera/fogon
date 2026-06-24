@@ -1,24 +1,27 @@
-# build output
-dist/
-# generated types
-.astro/
-
-# dependencies
+# Dependencias
 node_modules/
 
-# logs
+# Build
+dist/
+.netlify/
+
+# Astro
+.astro/
+
+# Variables de entorno — NUNCA deben subirse, aquí viven tus llaves
+# de Supabase (incluyendo la Service Role Key) y tus datos de cobro
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Editor / sistema
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-
-
-# environment variables
-.env
-.env.production
-
-# macOS-specific files
-.DS_Store
-
-# jetbrains setting folder
-.idea/

@@ -1,0 +1,866 @@
+---
+export const prerender = false
+import { createServerClient, parseCookieHeader } from '@supabase/ssr'
+
+const supabase = createServerClient(
+  import.meta.env.PUBLIC_SUPABASE_URL,
+  import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+  {
+    cookies: {
+      getAll() { return parseCookieHeader(Astro.request.headers.get('Cookie') ?? '') },
+      setAll(c) { c.forEach(({name,value,options}) => Astro.cookies.set(name,value,options)) }
+    }
+  }
+)
+
+const { data: { user } } = await supabase.auth.getUser()
+if (!user) return Astro.redirect('/login')
+
+const { data: business } = await supabase.from('businesses').select('*').eq('owner_id', user.id).single()
+
+// ← Pago pendiente a Fogón (no el cobro del negocio a sus clientes)
+const ownerClabe = import.meta.env.FOGON_OWNER_CLABE ?? ''
+const ownerPhone = import.meta.env.FOGON_OWNER_PHONE ?? ''
+const ownerBankName = import.meta.env.FOGON_OWNER_BANK_NAME ?? ''
+if (!business) return Astro.redirect('/login')
+
+const { data: categories } = await supabase
+  .from('categories').select('*, products(*)')
+  .eq('business_id', business.id).eq('is_active', true).order('position')
+
+const cats = (categories ?? []).map(c => ({
+  ...c,
+  products: (c.products ?? []).sort((a,b) => a.position - b.position)
+}))
+
+const lowStock = cats.flatMap(c => c.products)
+  .filter(p => p.stock !== null && p.stock <= (p.low_stock_alert ?? 5) && p.is_available)
+
+const formatPrice = n => new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n)
+const initials = business.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()
+const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
+---
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Menú — {business.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg-deep:       #050204;
+      --bg-body:       #0A0608;
+      --bg-surface:    #140A10;
+      --bg-hover:      #1C1018;
+      --text-1:        #FAF6F0;
+      --text-2:        #C4A882;
+      --text-3:        #7A5840;
+      --accent:        #B04030;
+      --accent-dim:    rgba(176,64,48,0.12);
+      --accent-border: rgba(176,64,48,0.28);
+      --border:        rgba(250,246,240,0.07);
+      --danger:        #f87171;
+      --danger-dim:    rgba(248,113,113,0.1);
+      --danger-border: rgba(248,113,113,0.25);
+      --success:       #4ade80;
+    }
+    body{background:var(--bg-body);color:var(--text-1);font-family:'Inter',sans-serif;min-height:100vh;font-size:16px}
+
+    .embers{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+    .ember{position:absolute;border-radius:50%;background:var(--accent);opacity:0;bottom:-5px;box-shadow:0 0 6px 2px rgba(176,64,48,0.4);animation:ember-rise linear infinite}
+    @keyframes ember-rise{0%{opacity:0;transform:translateY(0) scale(0.5)}10%{opacity:0.7}70%{opacity:0.45}100%{opacity:0;transform:translateY(-80vh) translateX(var(--drift)) scale(1.2)}}
+
+    .topbar{background:var(--bg-deep);border-bottom:1px solid var(--accent-border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:64px;position:sticky;top:0;z-index:10}
+
+    .pending-payment-banner{
+      background:var(--danger-dim);border-bottom:1px solid var(--danger-border);
+      padding:16px 24px;
+    }
+    .pending-title{font-size:14px;font-weight:700;color:var(--danger);font-family:'Inter',sans-serif;max-width:960px;margin:0 auto 6px}
+    .pending-text{font-size:13px;color:var(--text-2);font-family:'Inter',sans-serif;max-width:960px;margin:0 auto;line-height:1.6}
+    .pending-pay-info{
+      display:flex;gap:20px;flex-wrap:wrap;max-width:960px;margin:10px auto 0;
+      font-size:13px;color:var(--text-1);font-family:'Inter',sans-serif;
+    }
+    .pending-pay-info strong{color:var(--text-3);font-weight:600;margin-right:4px}
+    .logo-sm{width:38px;height:38px;border-radius:10px;background:var(--accent-dim);border:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:15px;font-weight:700;color:var(--accent);overflow:hidden}
+    .logo-sm img{width:100%;height:100%;object-fit:cover}
+    .biz-name{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700;color:var(--text-1)}
+    .biz-sub{font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:1.2px;margin-top:1px}
+    .topbar-right{display:flex;align-items:center;gap:12px}
+    .topbar-link{font-size:13px;color:var(--text-3);text-decoration:none}
+    .topbar-link:hover{color:var(--text-2)}
+    .logout-btn{background:none;border:none;color:var(--text-3);cursor:pointer;font-size:13px;font-family:'Inter',sans-serif}
+    .logout-btn:hover{color:var(--text-2)}
+
+    .dash-nav{background:var(--bg-deep);border-bottom:1px solid var(--border);padding:0 24px;display:flex;gap:4px}
+    .dash-nav a{display:inline-block;padding:14px 16px;font-size:15px;font-weight:500;color:var(--text-2);text-decoration:none;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s}
+    .dash-nav a.active,.dash-nav a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+
+    .main{max-width:960px;margin:0 auto;padding:24px;position:relative;z-index:1}
+
+    .alert-box{background:var(--danger-dim);border:1px solid var(--danger-border);border-radius:14px;padding:16px 20px;margin-bottom:24px;display:flex;align-items:flex-start;gap:14px}
+    .alert-title{font-size:14px;font-weight:600;color:var(--danger);margin-bottom:5px}
+    .alert-items{font-size:13px;color:var(--text-2)}
+
+    .cat-section{margin-bottom:32px}
+    .cat-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .cat-name{font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:2px}
+
+    /* ── Agregar categoría / producto ──────────────── */
+    .add-product-btn{
+      font-size:12px;background:none;color:var(--accent);border:1px solid var(--accent-border);
+      border-radius:7px;padding:5px 11px;cursor:pointer;font-family:'Inter',sans-serif;
+      transition:background 0.15s,color 0.15s;
+    }
+    .add-product-btn:hover{background:var(--accent-dim)}
+
+    .add-product-form{
+      display:none;gap:10px;margin-top:10px;padding:14px;
+      background:var(--bg-deep);border:1px dashed var(--accent-border);border-radius:10px;
+      flex-wrap:wrap;align-items:flex-end;
+    }
+    .add-product-form input{flex:1;min-width:140px}
+
+    .cancel-btn{
+      background:none;color:var(--text-3);border:1px solid var(--border);
+      border-radius:8px;padding:9px 14px;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif;
+    }
+    .cancel-btn:hover{color:var(--text-2);border-color:rgba(250,246,240,0.15)}
+
+    .add-category-section{
+      background:var(--bg-surface);border:1px dashed var(--accent-border);border-radius:14px;
+      padding:18px 20px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:32px;
+    }
+    .add-category-section input{flex:1;min-width:200px}
+    .add-category-hint{width:100%;font-size:13px;color:var(--text-3);margin-bottom:4px}
+    .add-btn{
+      background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border);
+      border-radius:8px;padding:9px 18px;font-size:14px;font-weight:600;cursor:pointer;
+      font-family:'Inter',sans-serif;transition:background 0.15s,color 0.15s;white-space:nowrap;
+    }
+    .add-btn:hover{background:var(--accent);color:var(--bg-deep)}
+
+    .products-table{display:flex;flex-direction:column;gap:8px}
+    .product-row{
+      background:var(--bg-surface);border-radius:12px;border:1px solid var(--border);
+      padding:14px 18px;display:grid;
+      grid-template-columns:110px 1fr auto auto auto;
+      align-items:center;gap:16px;transition:border-color 0.15s;
+    }
+    .product-row:hover{border-color:rgba(250,246,240,0.12)}
+    .product-row.low-stock{border-color:var(--danger-border);background:rgba(248,113,113,0.04)}
+    .product-row.out-of-stock{opacity:0.5}
+
+    .prod-img-wrap{width:110px;height:110px;border-radius:12px;overflow:hidden;flex-shrink:0;position:relative;cursor:pointer;background:var(--bg-deep)}
+    .prod-img{width:100%;height:100%;object-fit:cover;display:block}
+    .prod-img-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(176,64,48,0.25);border-radius:12px;transition:border-color 0.15s}
+    .prod-img-placeholder:hover{border-color:rgba(176,64,48,0.5)}
+    .img-overlay{position:absolute;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.15s;border-radius:9px;cursor:pointer}
+    .prod-img-wrap:hover .img-overlay{opacity:1}
+    .img-input{display:none}
+
+    .prod-info{min-width:0}
+    .prod-name{font-size:15px;font-weight:500;color:var(--text-1);margin-bottom:3px}
+    .prod-price{font-size:14px;color:var(--accent);font-weight:600}
+
+    .toggle-wrap{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text-2);cursor:pointer;white-space:nowrap}
+    .toggle-sw{width:34px;height:20px;border-radius:10px;border:none;cursor:pointer;position:relative;transition:background 0.2s;flex-shrink:0}
+    .toggle-sw::after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:white;transition:transform 0.2s}
+    .toggle-sw.on{background:#4ade80}
+    .toggle-sw.on::after{transform:translateX(14px)}
+    .toggle-sw.off{background:rgba(250,246,240,0.15)}
+
+    .stock-ctrl{display:flex;align-items:center;gap:7px;white-space:nowrap}
+    .stock-label{font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px}
+    .stock-input{width:60px;background:var(--bg-deep);color:var(--text-1);border:1px solid var(--border);border-radius:7px;padding:6px 8px;font-size:14px;font-weight:600;text-align:center;outline:none;font-family:'Inter',sans-serif}
+    .stock-input:focus{border-color:var(--accent-border)}
+    .stock-input.warn{border-color:var(--danger-border);color:var(--danger)}
+    .alert-ctrl{display:flex;align-items:center;gap:5px;white-space:nowrap}
+    .alert-label{font-size:12px;color:var(--text-3)}
+    .alert-input{width:46px;background:var(--bg-deep);color:var(--text-2);border:1px solid var(--border);border-radius:7px;padding:6px 6px;font-size:13px;text-align:center;outline:none;font-family:'Inter',sans-serif}
+    .activate-btn{font-size:13px;background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border);border-radius:7px;padding:6px 12px;cursor:pointer;font-family:'Inter',sans-serif}
+
+    /* Logo */
+    .logo-label{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer}
+    .logo-box{
+      width:88px;height:88px;border-radius:14px;
+      background:var(--bg-deep);border:2px dashed var(--accent-border);
+      position:relative;overflow:hidden;transition:border-color 0.15s;
+      flex-shrink:0;
+    }
+    .logo-label:hover .logo-box{border-color:var(--accent)}
+    .logo-box img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:12px}
+    .logo-box-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+    .logo-box img{width:100%;height:100%;object-fit:cover;border-radius:12px}
+    .logo-initials-text{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;color:var(--accent)}
+    .logo-hint{font-size:11px;color:var(--text-3);text-align:center;line-height:1.4}
+    .logo-edit-badge{
+      position:absolute;bottom:0;left:0;right:0;
+      background:rgba(0,0,0,0.6);color:#fff;
+      font-size:10px;text-align:center;padding:4px 0;
+      opacity:0;transition:opacity 0.15s;
+    }
+    .logo-label:hover .logo-edit-badge{opacity:1}
+
+    /* Cover drag */
+    .cover-wrap{display:flex;flex-direction:column;gap:8px}
+    .cover-dragger{
+      width:100%;height:190px;border-radius:12px;
+      background:var(--bg-deep);border:2px dashed var(--accent-border);
+      position:relative;overflow:hidden;
+      cursor:grab;user-select:none;
+    }
+    .cover-dragger.grabbing{cursor:grabbing}
+    .cover-dragger img{
+      width:100%;height:100%;object-fit:cover;
+      object-position:50% 50%;display:block;
+      pointer-events:none;
+    }
+    .cover-empty-state{
+      width:100%;height:100%;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:10px;
+    }
+    .cover-empty-state p{font-size:13px;color:var(--text-3)}
+    .cover-bar{
+      position:absolute;bottom:0;left:0;right:0;
+      background:rgba(10,6,8,0.8);
+      display:flex;align-items:center;justify-content:space-between;
+      padding:8px 14px;
+    }
+    .cover-bar-hint{font-size:12px;color:rgba(250,246,240,0.55)}
+    .cover-bar-save{
+      font-size:12px;font-weight:600;color:var(--accent);
+      background:none;border:1px solid var(--accent-border);
+      border-radius:6px;padding:4px 12px;cursor:pointer;
+      font-family:'Inter',sans-serif;
+    }
+    .cover-actions-row{display:flex;gap:10px;align-items:center}
+    .cover-change-label{font-size:12px;color:var(--text-3);cursor:pointer;text-decoration:underline}
+
+    /* Identidad del negocio */
+    .identity-card{background:var(--bg-surface);border-radius:14px;border:1px solid var(--border);padding:24px;margin-bottom:32px}
+    .identity-title{font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700;color:var(--text-1);margin-bottom:20px}
+    .identity-grid{display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:start}
+    @media(max-width:640px){.identity-grid{grid-template-columns:1fr}}
+
+    /* Logo upload */
+    .logo-upload{
+      width:88px;height:88px;border-radius:14px;
+      background:var(--bg-deep);border:2px dashed var(--accent-border);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      cursor:pointer;position:relative;overflow:hidden;flex-shrink:0;
+      transition:border-color 0.15s;
+    }
+    .logo-upload:hover{border-color:var(--accent)}
+    .logo-upload img{width:100%;height:100%;object-fit:cover;border-radius:12px}
+    .logo-upload-hint{font-size:11px;color:var(--text-3);margin-top:5px;text-align:center;line-height:1.4}
+    .logo-initials{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;color:var(--accent)}
+    .logo-overlay{
+      position:absolute;inset:0;background:rgba(0,0,0,0.55);
+      display:flex;align-items:center;justify-content:center;
+      opacity:0;transition:opacity 0.15s;border-radius:12px;
+    }
+    .logo-upload:hover .logo-overlay{opacity:1}
+
+    /* Cover upload */
+    .cover-upload{
+      width:100%;aspect-ratio:16/7;border-radius:12px;
+      background:var(--bg-deep);border:2px dashed var(--accent-border);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      cursor:pointer;position:relative;overflow:hidden;
+      transition:border-color 0.15s;
+    }
+    .cover-upload:hover{border-color:var(--accent)}
+    .cover-upload img{width:100%;height:100%;object-fit:cover;display:block}
+    .cover-hint{font-size:13px;color:var(--text-3);margin-top:8px}
+    .cover-overlay{
+      position:absolute;inset:0;background:rgba(0,0,0,0.5);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+      opacity:0;transition:opacity 0.15s;
+    }
+    .cover-upload:hover .cover-overlay{opacity:1}
+    .cover-overlay-text{font-size:14px;color:#FAF6F0;font-weight:500}
+
+    /* Horario y contacto */
+    .contact-section{margin-top:24px;padding-top:24px;border-top:1px solid var(--border)}
+    .contact-title{font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:700;color:var(--text-1);margin-bottom:16px}
+    .contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}
+    @media(max-width:640px){.contact-grid{grid-template-columns:1fr}}
+    .field{display:flex;flex-direction:column;gap:6px}
+    .field-full{grid-column:1/-1}
+    .field-label{font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px}
+    .field-input{background:var(--bg-deep);color:var(--text-1);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;outline:none;font-family:'Inter',sans-serif;transition:border-color 0.15s}
+    .field-input:focus{border-color:var(--accent-border)}
+    .field-input::placeholder{color:var(--text-3)}
+    .save-contact-btn{margin-top:18px;background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border);border-radius:8px;padding:9px 18px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background 0.15s,color 0.15s}
+
+    /* Cobro por transferencia */
+    .payment-hint{font-size:13px;color:var(--text-3);margin-bottom:16px;line-height:1.5}
+    .payment-row{display:flex;gap:18px;align-items:flex-start}
+    .payment-fields{flex:1}
+    @media(max-width:640px){.payment-row{flex-direction:column;align-items:center}}
+    .save-contact-btn:hover{background:var(--accent);color:var(--bg-deep)}
+
+    .upload-toast{position:fixed;bottom:24px;right:24px;background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;font-size:14px;color:var(--text-1);z-index:100;display:none;font-family:'Inter',sans-serif}
+  </style>
+</head>
+<body>
+  <div class="embers" aria-hidden="true">
+    <span class="ember" style="left:8%;width:5px;height:5px;animation-duration:7s;animation-delay:0s;--drift:25px"></span>
+    <span class="ember" style="left:40%;width:4px;height:4px;animation-duration:10s;animation-delay:1.5s;--drift:-20px"></span>
+    <span class="ember" style="left:75%;width:5px;height:5px;animation-duration:9s;animation-delay:0.3s;--drift:22px"></span>
+  </div>
+
+  <header class="topbar">
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="logo-sm">{business.logo_url ? <img src={business.logo_url} alt=""/> : initials}</div>
+      <div>
+        <p class="biz-name">{business.name}</p>
+        <p class="biz-sub">Gestión de menú</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <a href={`/${business.slug}`} target="_blank" class="topbar-link">Ver tienda ↗</a>
+      <button class="logout-btn" onclick="handleLogout()">Salir</button>
+    </div>
+  </header>
+
+  {business.subscription_status !== 'active' && (
+    <div class="pending-payment-banner">
+      <p class="pending-title">⏳ Tu cuenta está pendiente de activación</p>
+      <p class="pending-text">
+        Tu tienda pública todavía no es visible para tus clientes. En cuanto recibamos tu pago de instalación
+        ($5,000 MXN, incluye tu primer mes), la activamos — mientras tanto, deja todo listo aquí abajo.
+      </p>
+      {(ownerClabe || ownerPhone) && (
+        <div class="pending-pay-info">
+          {ownerClabe && <span><strong>CLABE:</strong> {ownerClabe}</span>}
+          {ownerPhone && <span><strong>DiMo:</strong> {ownerPhone}</span>}
+          {ownerBankName && <span><strong>Banco:</strong> {ownerBankName}</span>}
+        </div>
+      )}
+    </div>
+  )}
+
+  <nav class="dash-nav">
+    <a href="/dashboard">Pedidos</a>
+    <a href="/dashboard/menu" class="active">Menú</a>
+    <a href="/dashboard/reportes">Reportes</a>
+  </nav>
+
+  <main class="main">
+    <!-- Identidad del negocio -->
+    <div class="identity-card">
+      <p class="identity-title">Identidad del negocio</p>
+      <div class="identity-grid">
+
+        <!-- Logo (label nativo — sin JS para abrir) -->
+        <label class="logo-label" for="logo-input">
+          <div class="logo-box">
+            {business.logo_url
+              ? <img src={business.logo_url} alt="Logo"/>
+              : <div class="logo-box-center"><span class="logo-initials-text">{initials}</span></div>
+            }
+            <span class="logo-edit-badge">Cambiar</span>
+          </div>
+          <span class="logo-hint">Logo<br/>cuadrado</span>
+        </label>
+        <input type="file" id="logo-input" accept="image/*" style="display:none" onchange="uploadLogo(this)"/>
+
+        <!-- Cover con drag para reposicionar -->
+        <div class="cover-wrap">
+          <div class="cover-dragger" id="cover-dragger">
+            {business.cover_url
+              ? <>
+                  <img id="cover-img" src={business.cover_url} alt="Foto del local"/>
+                  <div class="cover-bar">
+                    <span class="cover-bar-hint">↕ Arrastra para reposicionar</span>
+                    <button class="cover-bar-save" id="save-pos-btn" onclick="savePosition()">Guardar posición</button>
+                  </div>
+                </>
+              : <label class="cover-empty-state" for="cover-input" style="cursor:pointer">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(176,64,48,0.4)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+                  <p>Foto del local — click para subir</p>
+                </label>
+            }
+          </div>
+          {business.cover_url && (
+            <div class="cover-actions-row">
+              <label class="cover-change-label" for="cover-input">Cambiar foto</label>
+            </div>
+          )}
+          <input type="file" id="cover-input" accept="image/*" style="display:none" onchange="uploadCover(this)"/>
+        </div>
+
+      </div>
+
+      <!-- Horario y contacto -->
+      <div class="contact-section">
+        <p class="contact-title">Horario y contacto</p>
+        <div class="contact-grid">
+          <div class="field">
+            <label class="field-label">Abre</label>
+            <input type="time" class="field-input" id="open-time-input" value={business.open_time?.slice(0,5) ?? ''} onchange="saveContact()"/>
+          </div>
+          <div class="field">
+            <label class="field-label">Cierra</label>
+            <input type="time" class="field-input" id="close-time-input" value={business.close_time?.slice(0,5) ?? ''} onchange="saveContact()"/>
+          </div>
+          <div class="field field-full">
+            <label class="field-label">WhatsApp (con código de país, sin +ni espacios)</label>
+            <input type="tel" class="field-input" id="whatsapp-input" placeholder="5216141234567" value={business.whatsapp_number ?? ''}/>
+          </div>
+          <div class="field">
+            <label class="field-label">Instagram</label>
+            <input type="url" class="field-input" id="instagram-input" placeholder="https://instagram.com/..." value={business.instagram_url ?? ''}/>
+          </div>
+          <div class="field">
+            <label class="field-label">Facebook</label>
+            <input type="url" class="field-input" id="facebook-input" placeholder="https://facebook.com/..." value={business.facebook_url ?? ''}/>
+          </div>
+          <div class="field">
+            <label class="field-label">TikTok</label>
+            <input type="url" class="field-input" id="tiktok-input" placeholder="https://tiktok.com/@..." value={business.tiktok_url ?? ''}/>
+          </div>
+        </div>
+        <button class="save-contact-btn" onclick="saveContact()">Guardar</button>
+      </div>
+
+      <!-- Cobro por transferencia -->
+      <div class="contact-section">
+        <p class="contact-title">Cobro por transferencia</p>
+        <p class="payment-hint">Llena lo que ya tengas gratis de tu banco — el cliente lo verá al pagar. Esto nunca pasa por Fogón.</p>
+
+        <div class="payment-row">
+          <label class="logo-label" for="codi-input">
+            <div class="logo-box">
+              {business.payment_codi_qr_url
+                ? <img src={business.payment_codi_qr_url} alt="QR de CoDi"/>
+                : <div class="logo-box-center"><span class="logo-initials-text" style="font-size:12px;line-height:1.2;text-align:center">QR<br/>CoDi</span></div>
+              }
+              <span class="logo-edit-badge">Cambiar</span>
+            </div>
+            <span class="logo-hint">QR de CoDi<br/>(opcional)</span>
+          </label>
+          <input type="file" id="codi-input" accept="image/*" style="display:none" onchange="uploadCodiQr(this)"/>
+
+          <div class="contact-grid payment-fields">
+            <div class="field">
+              <label class="field-label">CLABE</label>
+              <input type="text" class="field-input" id="clabe-input" placeholder="18 dígitos" maxlength="18" value={business.payment_clabe ?? ''} onchange="savePaymentInfo()"/>
+            </div>
+            <div class="field">
+              <label class="field-label">Celular para DiMo</label>
+              <input type="tel" class="field-input" id="dimo-phone-input" placeholder="10 dígitos" maxlength="10" value={business.payment_phone ?? ''} onchange="savePaymentInfo()"/>
+            </div>
+            <div class="field field-full">
+              <label class="field-label">Banco</label>
+              <input type="text" class="field-input" id="bank-name-input" placeholder="BBVA, Banorte, Santander..." value={business.payment_bank_name ?? ''} onchange="savePaymentInfo()"/>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    {lowStock.length > 0 && (
+      <div class="alert-box">
+        <span style="font-size:20px">⚠️</span>
+        <div>
+          <p class="alert-title">Stock bajo — {lowStock.length} producto{lowStock.length > 1 ? 's' : ''}</p>
+          <p class="alert-items">{lowStock.map(p => p.name).join(' · ')}</p>
+        </div>
+      </div>
+    )}
+
+    {cats.map(cat => (
+      <div class="cat-section">
+        <div class="cat-header">
+          <span class="cat-name">{cat.name}</span>
+          <button class="add-product-btn" onclick={`toggleAddProduct('${cat.id}')`}>+ Producto</button>
+        </div>
+        <div class="products-table">
+          {cat.products.map(product => (
+            <div
+              class={`product-row ${!product.is_available ? 'out-of-stock' : product.stock !== null && product.stock <= (product.low_stock_alert ?? 5) ? 'low-stock' : ''}`}
+              id={`row-${product.id}`}
+            >
+              <!-- Foto -->
+              <div class="prod-img-wrap" onclick={`triggerUpload('${product.id}')`}>
+                {product.image_url
+                  ? <><img src={product.image_url} class="prod-img" alt={product.name}/><div class="img-overlay"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></div></>
+                  : <div class="prod-img-placeholder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(176,64,48,0.4)" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></div>
+                }
+                <input class="img-input" id={`img-${product.id}`} type="file" accept="image/*" onchange={`uploadPhoto('${product.id}', this)`}/>
+              </div>
+
+              <div class="prod-info">
+                <p class="prod-name">{product.name}</p>
+                <p class="prod-price">{formatPrice(product.price)}</p>
+              </div>
+
+              <div class="toggle-wrap" onclick={`toggleAvail('${product.id}', ${product.is_available})`}>
+                <button class={`toggle-sw ${product.is_available ? 'on' : 'off'}`} id={`tog-${product.id}`}></button>
+                <span id={`lbl-${product.id}`} style={product.is_available ? 'color:var(--success)' : 'color:var(--text-3)'}>
+                  {product.is_available ? 'Disponible' : 'Agotado'}
+                </span>
+              </div>
+
+              <div class="stock-ctrl">
+                <span class="stock-label">Stock</span>
+                {product.stock !== null
+                  ? <input class={`stock-input${product.stock <= (product.low_stock_alert ?? 5) ? ' warn' : ''}`}
+                      id={`stk-${product.id}`} type="number" min="0" value={product.stock}
+                      onchange={`updateStock('${product.id}', this.value, ${product.low_stock_alert ?? 5})`}/>
+                  : <button class="activate-btn" onclick={`enableStock('${product.id}')`}>+ Activar</button>
+                }
+              </div>
+
+              {product.stock !== null && (
+                <div class="alert-ctrl">
+                  <span class="alert-label">⚠️ si &lt;</span>
+                  <input class="alert-input" id={`alt-${product.id}`} type="number" min="1"
+                    value={product.low_stock_alert ?? 5}
+                    onchange={`updateAlert('${product.id}', this.value)`}/>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div class="add-product-form" id={`add-form-${cat.id}`}>
+          <input type="text" id={`new-prod-name-${cat.id}`} class="field-input" placeholder="Nombre del producto"/>
+          <input type="number" id={`new-prod-price-${cat.id}`} class="field-input" placeholder="Precio" min="0" step="0.01"/>
+          <button class="save-contact-btn" onclick={`saveNewProduct('${cat.id}')`}>Guardar</button>
+          <button class="cancel-btn" onclick={`toggleAddProduct('${cat.id}')`}>Cancelar</button>
+        </div>
+      </div>
+    ))}
+
+    <div class="add-category-section">
+      {cats.length === 0 && <p class="add-category-hint">Aún no tienes categorías — crea la primera para empezar a armar tu menú.</p>}
+      <input type="text" id="new-category-name" class="field-input" placeholder="Nombre de categoría (ej. Tacos, Bebidas, Postres)"/>
+      <button class="add-btn" onclick="addCategory()">+ Agregar categoría</button>
+    </div>
+  </main>
+
+  <div class="upload-toast" id="toast"></div>
+  <div id="menu-cfg" data-bid={business.id} data-url={supabaseUrl} hidden/>
+</body>
+
+<script>
+import { createBrowserClient } from '@supabase/ssr'
+
+const sb = createBrowserClient(
+  import.meta.env.PUBLIC_SUPABASE_URL,
+  import.meta.env.PUBLIC_SUPABASE_ANON_KEY
+)
+
+function toast(msg, ok = true) {
+  const el = document.getElementById('toast')
+  el.textContent = msg
+  el.style.color = ok ? 'var(--success)' : 'var(--danger)'
+  el.style.display = 'block'
+  setTimeout(() => { el.style.display = 'none' }, ok ? 3000 : 7000)
+}
+
+// ── Crear categorías y productos ──────────────────
+window.toggleAddProduct = (catId) => {
+  const form = document.getElementById(`add-form-${catId}`)
+  if (!form) return
+  form.style.display = form.style.display === 'flex' ? 'none' : 'flex'
+}
+
+window.addCategory = async () => {
+  const cfg = document.getElementById('menu-cfg')
+  const bid = cfg.dataset.bid
+  const input = document.getElementById('new-category-name')
+  const name = input.value.trim()
+  if (!name) { toast('Escribe el nombre de la categoría', false); return }
+
+  const { count } = await sb.from('categories').select('*', { count: 'exact', head: true }).eq('business_id', bid)
+  const { error } = await sb.from('categories').insert({
+    business_id: bid, name, position: count ?? 0, is_active: true
+  })
+  if (error) { console.error('addCategory error:', error); toast(`No se pudo crear la categoría: ${error.message}`, false); return }
+  toast('¡Categoría creada!')
+  setTimeout(() => window.location.reload(), 600)
+}
+
+window.saveNewProduct = async (catId) => {
+  const cfg = document.getElementById('menu-cfg')
+  const bid = cfg.dataset.bid
+  const nameInput = document.getElementById(`new-prod-name-${catId}`)
+  const priceInput = document.getElementById(`new-prod-price-${catId}`)
+  const name = nameInput.value.trim()
+  const price = parseFloat(priceInput.value)
+
+  if (!name) { toast('Escribe el nombre del producto', false); return }
+  if (!price || price <= 0) { toast('Pon un precio válido', false); return }
+
+  const { count } = await sb.from('products').select('*', { count: 'exact', head: true }).eq('category_id', catId)
+  const { error } = await sb.from('products').insert({
+    business_id: bid, category_id: catId, name, price, stock: null, is_available: true, position: count ?? 0
+  })
+  if (error) { console.error('saveNewProduct error:', error); toast(`No se pudo crear el producto: ${error.message}`, false); return }
+  toast('¡Producto agregado!')
+  setTimeout(() => window.location.reload(), 600)
+}
+
+window.triggerUpload = (productId) => {
+  document.getElementById(`img-${productId}`).click()
+}
+
+window.uploadPhoto = async (productId, input) => {
+  const file = input.files?.[0]
+  if (!file) return
+  const ext = file.name.split('.').pop()
+  const path = `products/${productId}/${Date.now()}.${ext}`
+  toast('Subiendo foto...')
+  const { error: upErr } = await sb.storage.from('fogon-media').upload(path, file, { upsert: true })
+  if (upErr) { toast('Error al subir la foto', false); return }
+  const { data: { publicUrl } } = sb.storage.from('fogon-media').getPublicUrl(path)
+  await sb.from('products').update({ image_url: publicUrl }).eq('id', productId)
+  const row = document.getElementById(`row-${productId}`)
+  const wrap = row?.querySelector('.prod-img-wrap')
+  if (wrap) {
+    wrap.innerHTML = `<img src="${publicUrl}" class="prod-img" alt=""/>
+      <div class="img-overlay" onclick="triggerUpload('${productId}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></div>
+      <input class="img-input" id="img-${productId}" type="file" accept="image/*" onchange="uploadPhoto('${productId}', this)"/>`
+  }
+  toast('¡Foto actualizada!')
+}
+
+window.toggleAvail = async (id, current) => {
+  const newVal = !current
+  await sb.from('products').update({ is_available: newVal }).eq('id', id)
+  const btn = document.getElementById(`tog-${id}`)
+  const lbl = document.getElementById(`lbl-${id}`)
+  const row = document.getElementById(`row-${id}`)
+  if (btn) btn.className = `toggle-sw ${newVal ? 'on' : 'off'}`
+  if (lbl) { lbl.textContent = newVal ? 'Disponible' : 'Agotado'; lbl.style.color = newVal ? 'var(--success)' : 'var(--text-3)' }
+  if (row) row.classList.toggle('out-of-stock', !newVal)
+  document.querySelector(`[onclick*="toggleAvail('${id}'"]`)?.setAttribute('onclick', `toggleAvail('${id}', ${newVal})`)
+}
+
+window.updateStock = async (id, val, alertThreshold) => {
+  const stock = parseInt(val)
+  if (isNaN(stock) || stock < 0) return
+  await sb.from('products').update({ stock }).eq('id', id)
+  const input = document.getElementById(`stk-${id}`)
+  if (input) input.className = `stock-input${stock <= alertThreshold ? ' warn' : ''}`
+  if (stock <= 0) {
+    await sb.from('products').update({ is_available: false }).eq('id', id)
+    const btn = document.getElementById(`tog-${id}`)
+    const lbl = document.getElementById(`lbl-${id}`)
+    if (btn) btn.className = 'toggle-sw off'
+    if (lbl) { lbl.textContent = 'Agotado'; lbl.style.color = 'var(--text-3)' }
+  }
+}
+
+window.updateAlert = async (id, val) => {
+  const low_stock_alert = parseInt(val)
+  if (isNaN(low_stock_alert) || low_stock_alert < 1) return
+  await sb.from('products').update({ low_stock_alert }).eq('id', id)
+  const stk = document.getElementById(`stk-${id}`)
+  if (stk) stk.className = `stock-input${parseInt(stk.value) <= low_stock_alert ? ' warn' : ''}`
+}
+
+window.enableStock = async (id) => {
+  await sb.from('products').update({ stock: 10, low_stock_alert: 5 }).eq('id', id)
+  window.location.reload()
+}
+
+window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
+
+// ── Logo upload ───────────────────────────────────
+window.uploadLogo = async (input) => {
+  const file = input.files?.[0]
+  if (!file) return
+  const ext = file.name.split('.').pop()
+  const cfg = document.getElementById('menu-cfg')
+  const bid = cfg.dataset.bid
+  const path = `logos/${bid}/logo.${ext}`
+  toast('Subiendo logo...')
+  const { error: upErr } = await sb.storage.from('fogon-media').upload(path, file, { upsert: true })
+  if (upErr) { toast('Error al subir el logo', false); return }
+  const { data: { publicUrl } } = sb.storage.from('fogon-media').getPublicUrl(path)
+  await sb.from('businesses').update({ logo_url: publicUrl }).eq('id', bid)
+  const box = document.querySelector('.logo-box')
+  if (box) {
+    box.innerHTML = `<img src="${publicUrl}" alt="Logo" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:12px"/><span class="logo-edit-badge">Cambiar</span>`
+    box.style.border = 'none'
+  }
+  toast('¡Logo actualizado!')
+}
+
+// ── Cover upload ──────────────────────────────────
+window.uploadCover = async (input) => {
+  const file = input.files?.[0]
+  if (!file) return
+  const ext = file.name.split('.').pop()
+  const cfg = document.getElementById('menu-cfg')
+  const bid = cfg.dataset.bid
+  const path = `covers/${bid}/cover.${ext}`
+  toast('Subiendo foto del local...')
+  const { error: upErr } = await sb.storage.from('fogon-media').upload(path, file, { upsert: true })
+  if (upErr) { toast('Error al subir la foto', false); return }
+  const { data: { publicUrl } } = sb.storage.from('fogon-media').getPublicUrl(path)
+  await sb.from('businesses').update({ cover_url: publicUrl }).eq('id', bid)
+
+  // Mostrar imagen en el dragger
+  posX = 50; posY = 50
+  const dragger = document.getElementById('cover-dragger')
+  if (dragger) {
+    dragger.innerHTML = `
+      <img id="cover-img" src="${publicUrl}" alt="Foto del local" style="width:100%;height:100%;object-fit:cover;object-position:50% 50%;display:block;pointer-events:none;"/>
+      <div class="cover-bar">
+        <span class="cover-bar-hint">↕ Arrastra para reposicionar</span>
+        <button class="cover-bar-save" id="save-pos-btn" onclick="savePosition()">Guardar posición</button>
+      </div>`
+    requestAnimationFrame(() => { requestAnimationFrame(initDrag) })
+  }
+
+  // Mostrar botón "Cambiar foto" si no estaba
+  const actionsRow = document.querySelector('.cover-actions-row')
+  if (actionsRow) actionsRow.style.display = 'flex'
+
+  toast('¡Foto del local actualizada!')
+}
+
+// ── Drag reposicionar ─────────────────────────────
+let posX = 50, posY = 50
+let isDragging = false
+let lastX = 0, lastY = 0
+
+function applyPos(img) {
+  if (img) img.style.objectPosition = `${posX}% ${posY}%`
+}
+
+function initDrag() {
+  const dragger = document.getElementById('cover-dragger')
+  const img = document.getElementById('cover-img')
+  if (!dragger || !img) return
+
+  dragger.addEventListener('mousedown', (e) => {
+    if (e.target.tagName === 'BUTTON') return // no iniciar drag si click en botón
+    isDragging = true
+    lastX = e.clientX
+    lastY = e.clientY
+    dragger.classList.add('grabbing')
+    e.preventDefault()
+  })
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return
+    const dx = e.clientX - lastX
+    const dy = e.clientY - lastY
+    lastX = e.clientX
+    lastY = e.clientY
+    posX = Math.max(0, Math.min(100, posX - dx * 0.15))
+    posY = Math.max(0, Math.min(100, posY - dy * 0.15))
+    applyPos(document.getElementById('cover-img'))
+  })
+
+  window.addEventListener('mouseup', () => {
+    if (isDragging) { isDragging = false; dragger.classList.remove('grabbing') }
+  })
+
+  // Touch
+  dragger.addEventListener('touchstart', (e) => {
+    if (e.target.tagName === 'BUTTON') return
+    isDragging = true
+    lastX = e.touches[0].clientX
+    lastY = e.touches[0].clientY
+    e.preventDefault()
+  }, { passive: false })
+
+  dragger.addEventListener('touchmove', (e) => {
+    if (!isDragging) return
+    const dx = e.touches[0].clientX - lastX
+    const dy = e.touches[0].clientY - lastY
+    lastX = e.touches[0].clientX
+    lastY = e.touches[0].clientY
+    posX = Math.max(0, Math.min(100, posX - dx * 0.15))
+    posY = Math.max(0, Math.min(100, posY - dy * 0.15))
+    applyPos(document.getElementById('cover-img'))
+    e.preventDefault()
+  }, { passive: false })
+
+  dragger.addEventListener('touchend', () => { isDragging = false })
+}
+
+window.savePosition = async () => {
+  const cfg = document.getElementById('menu-cfg')
+  const bid = cfg.dataset.bid
+  const posStr = `${Math.round(posX)}% ${Math.round(posY)}%`
+  const { error } = await sb.from('businesses').update({ cover_position: posStr }).eq('id', bid)
+  if (error) { toast('Error al guardar posición', false); return }
+  toast('¡Posición guardada!')
+}
+
+// ── Horario y contacto ─────────────────────────────
+window.saveContact = async () => {
+  const cfg = document.getElementById('menu-cfg')
+  const bid = cfg.dataset.bid
+
+  const open_time = document.getElementById('open-time-input').value || null
+  const close_time = document.getElementById('close-time-input').value || null
+  const whatsapp_number = document.getElementById('whatsapp-input').value.trim() || null
+  const instagram_url = document.getElementById('instagram-input').value.trim() || null
+  const facebook_url = document.getElementById('facebook-input').value.trim() || null
+  const tiktok_url = document.getElementById('tiktok-input').value.trim() || null
+
+  const { error } = await sb.from('businesses').update({
+    open_time, close_time, whatsapp_number, instagram_url, facebook_url, tiktok_url
+  }).eq('id', bid)
+
+  if (error) { toast(`Error al guardar: ${error.message}`, false); return }
+  toast('¡Datos guardados!')
+}
+
+// ── Cobro por transferencia ─────────────────────────
+window.uploadCodiQr = async (input) => {
+  const file = input.files?.[0]
+  if (!file) return
+  const ext = file.name.split('.').pop()
+  const cfg = document.getElementById('menu-cfg')
+  const bid = cfg.dataset.bid
+  const path = `codi/${bid}/qr.${ext}`
+  toast('Subiendo QR...')
+  const { error: upErr } = await sb.storage.from('fogon-media').upload(path, file, { upsert: true })
+  if (upErr) { toast(`Error al subir el QR: ${upErr.message}`, false); return }
+  const { data: { publicUrl } } = sb.storage.from('fogon-media').getPublicUrl(path)
+  const { error } = await sb.from('businesses').update({ payment_codi_qr_url: publicUrl }).eq('id', bid)
+  if (error) { toast(`Error al guardar el QR: ${error.message}`, false); return }
+  const box = document.getElementById('codi-input').closest('label')?.querySelector('.logo-box')
+  if (box) {
+    box.innerHTML = `<img src="${publicUrl}" alt="QR de CoDi"/><span class="logo-edit-badge">Cambiar</span>`
+  }
+  toast('¡QR actualizado!')
+}
+
+window.savePaymentInfo = async () => {
+  const cfg = document.getElementById('menu-cfg')
+  const bid = cfg.dataset.bid
+
+  const payment_clabe = document.getElementById('clabe-input').value.trim() || null
+  const payment_phone = document.getElementById('dimo-phone-input').value.trim() || null
+  const payment_bank_name = document.getElementById('bank-name-input').value.trim() || null
+
+  const { error } = await sb.from('businesses').update({
+    payment_clabe, payment_phone, payment_bank_name
+  }).eq('id', bid)
+
+  if (error) { toast(`Error al guardar: ${error.message}`, false); return }
+  toast('¡Datos de cobro guardados!')
+}
+
+// Inicializar drag si ya hay cover cargado
+initDrag()
+</script>
+</html>
