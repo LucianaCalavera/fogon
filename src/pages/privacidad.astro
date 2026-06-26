@@ -1,0 +1,104 @@
+---
+export const prerender = false
+---
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Aviso de Privacidad — Fogón</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg-body:#0A0608;
+      --bg-surface:#140A10;
+      --text-1:#FAF6F0;
+      --text-2:#C4A882;
+      --text-3:#7A5840;
+      --accent:#B04030;
+      --border:rgba(250,246,240,0.08);
+    }
+    body{background:var(--bg-body);color:var(--text-1);font-family:'Inter',sans-serif;line-height:1.7}
+    nav{display:flex;align-items:center;padding:22px 24px;max-width:720px;margin:0 auto}
+    .back-link{color:var(--text-2);text-decoration:none;font-size:14px;font-weight:600}
+    .back-link:hover{color:var(--text-1)}
+    main{max-width:680px;margin:0 auto;padding:24px 24px 80px}
+    h1{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:36px;margin-bottom:8px}
+    .updated{color:var(--text-3);font-size:13px;margin-bottom:40px}
+    h2{font-size:19px;font-weight:700;margin:36px 0 12px;color:var(--text-1)}
+    p{color:var(--text-2);font-size:15px;margin-bottom:14px}
+    ul{color:var(--text-2);font-size:15px;margin:0 0 14px 20px}
+    li{margin-bottom:8px}
+    strong{color:var(--text-1)}
+    a{color:var(--accent)}
+    .contact-box{
+      background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;
+      padding:20px 22px;margin-top:40px;font-size:14px;color:var(--text-2);
+    }
+  </style>
+</head>
+<body>
+  <nav><a class="back-link" href="/">← Fogón</a></nav>
+
+  <main>
+    <h1>Aviso de Privacidad</h1>
+    <p class="updated">Última actualización: 26 de junio de 2026</p>
+
+    <h2>Responsable del tratamiento de tus datos</h2>
+    <p><strong>Diana Lucía Santillán Páez</strong>, operando bajo el nombre comercial <strong>InannaDevWeb / Fogón</strong>, con domicilio en Chihuahua, Chihuahua, México, es responsable del tratamiento de tus datos personales conforme a la Ley Federal de Protección de Datos Personales en Posesión de Particulares (LFPDPPP).</p>
+
+    <h2>¿Quién recibe este aviso?</h2>
+    <p>Fogón trata datos personales de dos tipos de personas distintas:</p>
+    <ul>
+      <li><strong>Dueños de negocio</strong> que crean una cuenta en Fogón para administrar su tienda.</li>
+      <li><strong>Clientes finales</strong> que hacen un pedido en la tienda de alguno de esos negocios, sin necesidad de crear cuenta.</li>
+    </ul>
+
+    <h2>Datos que recabamos</h2>
+    <p><strong>De los dueños de negocio:</strong> nombre del negocio, correo electrónico, contraseña (cifrada, nunca la vemos en texto plano), número de WhatsApp (opcional), y los datos de cobro que tú decides configurar (CLABE, número para DiMo, banco, QR de CoDi) — estos los muestras tú mismo a tus clientes; Fogón solo los almacena para mostrarlos en tu tienda.</p>
+    <p><strong>De los clientes finales</strong> (recabados por el negocio a través de Fogón): nombre, teléfono, dirección de entrega (si el pedido es a domicilio), notas del pedido.</p>
+    <p>No recabamos datos de tarjetas bancarias, contraseñas de banca en línea, ni procesamos pagos directamente — el dinero del pedido se transfiere de forma directa entre el cliente y el negocio.</p>
+
+    <h2>Para qué usamos tus datos</h2>
+    <p><strong>Finalidades necesarias para el servicio:</strong></p>
+    <ul>
+      <li>Crear y operar tu cuenta.</li>
+      <li>Procesar y dar seguimiento a los pedidos.</li>
+      <li>Mostrar tu tienda pública a tus clientes.</li>
+      <li>Confirmar tu pago de instalación y mensualidad.</li>
+      <li>Notificarte sobre cambios al servicio o a estos avisos.</li>
+    </ul>
+    <p><strong>Finalidades secundarias</strong> (puedes oponerte a estas sin afectar el servicio): enviarte novedades o promociones sobre Fogón.</p>
+    <p>Si no deseas que tus datos se usen para finalidades secundarias, escríbenos a inannadevweb@gmail.com indicando tu negativa.</p>
+
+    <h2>Con quién compartimos tus datos</h2>
+    <p>Usamos los siguientes proveedores de infraestructura para operar Fogón, quienes actúan como encargados del tratamiento (procesan los datos por nuestra instrucción, no para fines propios):</p>
+    <ul>
+      <li><strong>Supabase</strong> — almacenamiento de base de datos y autenticación.</li>
+      <li><strong>Netlify</strong> — hospedaje de la plataforma.</li>
+      <li><strong>Firebase (Google)</strong> — notificaciones push para el panel del negocio.</li>
+    </ul>
+    <p>No vendemos ni compartimos tus datos con terceros para fines de mercadotecnia ajenos a Fogón.</p>
+
+    <h2>Cookies y tecnologías similares</h2>
+    <p>Fogón usa el almacenamiento local de tu navegador (<code>localStorage</code>) únicamente para recordar tu pedido más reciente y ayudarte a regresar a su seguimiento. No usamos cookies de rastreo publicitario ni analíticas de terceros.</p>
+
+    <h2>Tus derechos (Derechos ARCO)</h2>
+    <p>Tienes derecho a <strong>Acceder, Rectificar, Cancelar u Oponerte</strong> (ARCO) al uso de tus datos personales, así como a revocar tu consentimiento en cualquier momento.</p>
+    <p>Para ejercer cualquiera de estos derechos, escríbenos indicando tu nombre, el derecho que deseas ejercer, y una forma de contactarte. Responderemos dentro de los plazos que marca la ley.</p>
+
+    <h2>Cambios a este aviso</h2>
+    <p>Podemos actualizar este Aviso de Privacidad. Si el cambio es relevante, lo notificaremos a través del correo registrado en tu cuenta o mediante un aviso visible en la plataforma.</p>
+
+    <h2>Contacto</h2>
+    <div class="contact-box">
+      📧 inannadevweb@gmail.com<br/>
+      📞 614 304 9179
+    </div>
+  </main>
+</body>
+</html>

@@ -171,6 +171,9 @@ export const prerender = false
       padding:28px 24px;text-align:center;color:var(--text-3);font-size:13px;
       border-top:1px solid var(--border);
     }
+    .footer-links{display:flex;justify-content:center;gap:18px;margin-top:10px}
+    .footer-links a{color:var(--text-3);text-decoration:none}
+    .footer-links a:hover{color:var(--text-2)}
   </style>
 </head>
 <body>
@@ -310,6 +313,10 @@ export const prerender = false
 
   <footer>
     Fogón — hecho en Chihuahua, para negocios de Chihuahua.
+    <div class="footer-links">
+      <a href="/terminos">Términos y Condiciones</a>
+      <a href="/privacidad">Aviso de Privacidad</a>
+    </div>
   </footer>
 
   <script>
