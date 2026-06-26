@@ -8,6 +8,7 @@ export const prerender = false
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Fogón — Pedidos directos, sin comisión</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
   <meta name="description" content="Tu propio sistema de pedidos para tu restaurante. Sin comisión por venta, renta fija, el dinero va directo a tu cuenta."/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=Inter:wght@400;500;600;700;800&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet"/>
@@ -60,7 +61,11 @@ export const prerender = false
       display:flex;align-items:center;justify-content:space-between;
       padding:22px 24px;max-width:1040px;margin:0 auto;
     }
-    .nav-logo{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:38px;font-weight:700;color:var(--text-1);text-decoration:none}
+    .nav-logo{display:flex;align-items:center;gap:9px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:40px;font-weight:700;color:var(--text-1);text-decoration:none}
+    .nav-logo svg{height:60px;width:auto;flex-shrink:0}
+    .nav-right{display:flex;align-items:center;gap:20px}
+    .nav-login{color:var(--text-2);text-decoration:none;font-size:14px;font-weight:600}
+    .nav-login:hover{color:var(--text-1)}
     .nav-cta{
       background:none;color:var(--text-2);border:1px solid var(--border);
       border-radius:8px;padding:9px 18px;font-size:14px;font-weight:600;
@@ -171,18 +176,27 @@ export const prerender = false
 <body>
 
   <nav>
-    <a class="nav-logo" href="/">Fogón</a>
-    <a class="nav-cta" href="/registro">Crear mi negocio</a>
+    <a class="nav-logo" href="/">
+      <svg viewBox="0 0 200 212" xmlns="http://www.w3.org/2000/svg" fill="none" stroke-linejoin="round">
+        <polygon points="100,14 176,188 24,188" stroke="#C73E1D" stroke-width="10"/>
+        <polygon points="100,66 150,188 50,188" stroke="#FF6B35" stroke-width="10"/>
+        <polygon points="100,118 122,188 78,188" stroke="#FFD700" stroke-width="10"/>
+      </svg>
+      Fogón
+    </a>
+    <div class="nav-right">
+      <a class="nav-login" href="/login">Iniciar sesión</a>
+      <a class="nav-cta" href="/registro">Crear mi negocio</a>
+    </div>
   </nav>
 
   <!-- ── Hero + ticket comparativo ────────────────── -->
   <header class="hero wrap">
     <span class="eyebrow">Para restaurantes y negocios de comida en Chihuahua</span>
     <h1>Tu pedido. Tu dinero. Sin comisión.</h1>
-    <p class="hero-sub">Las apps de delivery se quedan con hasta 30% de cada venta. Fogón cobra una renta fija — el resto es completamente tuyo.</p>
+    <p class="hero-sub">Las apps de delivery se quedan con hasta 30% de cada venta. Fogón cobra una tarifa fija — el resto es completamente tuyo.</p>
     <div class="hero-ctas">
       <a class="btn-primary" href="/registro">Crea tu negocio gratis →</a>
-      <a class="btn-ghost" href="#precio">Ver precio</a>
     </div>
   </header>
 
@@ -227,13 +241,13 @@ export const prerender = false
           <span class="flow-tag">02</span>
           <div>
             <h3>Sube tu menú</h3>
-            <p>Agrega tus productos, precios y fotos cuando quieras — sin pedirle nada a nadie.</p>
+            <p>Agrega tus productos, precios y fotos cuando quieras.</p>
           </div>
         </div>
         <div class="flow-step">
           <span class="flow-tag">03</span>
           <div>
-            <h3>Recibe pedidos</h3>
+            <h3>Recibe pedidos en tu tienda en línea Fogón</h3>
             <p>Comparte tu link. Los pedidos llegan a tu panel en tiempo real, listos para confirmar.</p>
           </div>
         </div>
@@ -250,7 +264,7 @@ export const prerender = false
       <div class="features-list">
         <div class="feature-row">
           <h3>Pedidos en tiempo real</h3>
-          <p>Tu cliente ve cuando confirmas, sin que tengas que avisarle por fuera.</p>
+          <p>Tu cliente ve en el navegador cuando confirmas en tu dashboard.</p>
         </div>
         <div class="feature-row">
           <h3>Tu menú, tus reglas</h3>
@@ -258,10 +272,10 @@ export const prerender = false
         </div>
         <div class="feature-row">
           <h3>Horario automático</h3>
-          <p>Se abre y cierra solo según tu horario — o pausa manual si necesitas un descanso.</p>
+          <p> O pausa manualmente si necesitas un descanso.</p>
         </div>
         <div class="feature-row">
-          <h3>Cobra como ya cobras</h3>
+          <h3>Cobra como siempre</h3>
           <p>Efectivo, CLABE, DiMo o CoDi. El dinero va directo a tu cuenta, nunca pasa por Fogón.</p>
         </div>
       </div>
@@ -272,8 +286,8 @@ export const prerender = false
   <section id="precio">
     <div class="wrap" style="text-align:center">
       <div class="price-ticket">
-        <p class="price-head">TU RENTA, SIN SORPRESAS</p>
-        <div class="price-line"><span>Instalación</span><span>$5,000.00</span></div>
+        <p class="price-head">TU RENTA SIN SORPRESAS</p>
+        <div class="price-line"><span>Instalación (por sucursal)</span><span>$2,500.00</span></div>
         <div class="price-line"><span>Mensualidad</span><span>$499.00</span></div>
         <div class="price-perf"></div>
         <div class="price-total"><span>COMISIÓN POR VENTA</span><span>$0.00</span></div>
@@ -289,7 +303,7 @@ export const prerender = false
     <div class="wrap">
       <canvas id="fogonCanvas" class="final-flame" width="200" height="280"></canvas>
       <h2>Tu negocio. Tus reglas. Tu dinero.</h2>
-      <p>Crea tu cuenta hoy y empieza a recibir pedidos sin pagarle un peso de comisión.</p>
+      <p>Crea tu cuenta hoy y empieza a generar sin pagar comisión por pedido</p>
       <a class="btn-primary" href="/registro">Crear mi negocio gratis →</a>
     </div>
   </section>
