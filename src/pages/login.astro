@@ -8,6 +8,7 @@ import '../styles/global.css'
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Entrar — Fogón</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
@@ -32,7 +33,7 @@ import '../styles/global.css'
     .wrap{width:100%;max-width:420px}
 
     .hero{text-align:center;margin-bottom:44px}
-    .hero-flame{font-size:52px;margin:0 0 12px}
+    .hero-flame{width:64px;height:64px;margin:0 auto 12px;border-radius:14px}
     .hero-title{
       font-family:'Cormorant Garamond',serif;font-style:italic;
       font-size:36px;font-weight:600;color:var(--text-1);
@@ -74,7 +75,7 @@ import '../styles/global.css'
 <body>
   <div class="wrap">
     <div class="hero">
-      <p class="hero-flame">🔥</p>
+      <img class="hero-flame" src="/favicon.svg" alt="Fogón"/>
       <h1 class="hero-title">Fogón</h1>
       <p class="hero-sub">Panel del restaurantero</p>
     </div>
@@ -100,9 +101,9 @@ import '../styles/global.css'
 </body>
 
 <script>
-  import { createClient } from '@supabase/supabase-js'
+  import { createBrowserClient } from '@supabase/ssr'
 
-  const sb = createClient(
+  const sb = createBrowserClient(
     import.meta.env.PUBLIC_SUPABASE_URL,
     import.meta.env.PUBLIC_SUPABASE_ANON_KEY
   )
