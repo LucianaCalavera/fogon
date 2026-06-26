@@ -300,6 +300,13 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
 
     /* Cobro por transferencia */
     .payment-hint{font-size:13px;color:var(--text-3);margin-bottom:16px;line-height:1.5}
+    .location-search-row{display:flex;gap:10px;margin-bottom:14px}
+    .location-search-row .field-input{flex:1}
+    .location-map{
+      height:260px;border-radius:12px;overflow:hidden;border:1px solid var(--border);
+      margin-bottom:12px;background:var(--bg-deep);cursor:crosshair;
+    }
+    .location-coords{font-size:13px;color:var(--text-3);margin-bottom:14px;font-family:'Inter',sans-serif}
     .payment-row{display:flex;gap:18px;align-items:flex-start}
     .payment-fields{flex:1}
     @media(max-width:640px){.payment-row{flex-direction:column;align-items:center}}
@@ -307,6 +314,7 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
 
     .upload-toast{position:fixed;bottom:24px;right:24px;background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;font-size:14px;color:var(--text-1);z-index:100;display:none;font-family:'Inter',sans-serif}
   </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 </head>
 <body>
   <div class="embers" aria-hidden="true">
@@ -334,7 +342,7 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
       <p class="pending-title">⏳ Tu cuenta está pendiente de activación</p>
       <p class="pending-text">
         Tu tienda pública todavía no es visible para tus clientes. En cuanto recibamos tu pago de instalación
-        ($5,000 MXN, incluye tu primer mes), la activamos — mientras tanto, deja todo listo aquí abajo.
+        ($2,500 MXN, incluye tu primer mes), la activamos — mientras tanto, deja todo listo aquí abajo.
       </p>
       {(ownerClabe || ownerPhone) && (
         <div class="pending-pay-info">
@@ -428,6 +436,28 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
           </div>
         </div>
         <button class="save-contact-btn" onclick="saveContact()">Guardar</button>
+      </div>
+
+      <!-- Ubicación -->
+      <div class="contact-section">
+        <p class="contact-title">Ubicación</p>
+        <p class="payment-hint">Esto es lo que tus clientes ven en el mapa de tu tienda. Busca tu calle o haz clic directo en el mapa para marcar el punto exacto.</p>
+
+        <div class="field" style="margin-bottom:14px">
+          <label class="field-label">Dirección (texto, ej. "Centro Histórico, Chihuahua, Chih.")</label>
+          <input type="text" class="field-input" id="address-input" placeholder="Calle, colonia, ciudad" value={business.address ?? ''} onchange="saveContact()"/>
+        </div>
+
+        <div class="location-search-row">
+          <input type="text" class="field-input" id="location-search-input" placeholder="Busca tu calle o colonia..."/>
+          <button class="add-btn" onclick="searchLocation()">Buscar</button>
+        </div>
+
+        <div id="location-map" class="location-map"></div>
+        <p class="location-coords" id="location-coords-display">
+          {business.latitude && business.longitude ? `📍 Lat: ${business.latitude}, Lng: ${business.longitude}` : 'Sin ubicación marcada todavía — busca tu calle o haz clic en el mapa'}
+        </p>
+        <button class="save-contact-btn" onclick="saveLocation()">Guardar ubicación</button>
       </div>
 
       <!-- Cobro por transferencia -->
@@ -549,9 +579,10 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
   </main>
 
   <div class="upload-toast" id="toast"></div>
-  <div id="menu-cfg" data-bid={business.id} data-url={supabaseUrl} hidden/>
+  <div id="menu-cfg" data-bid={business.id} data-url={supabaseUrl} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} hidden/>
 </body>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 import { createBrowserClient } from '@supabase/ssr'
 
@@ -814,9 +845,10 @@ window.saveContact = async () => {
   const instagram_url = document.getElementById('instagram-input').value.trim() || null
   const facebook_url = document.getElementById('facebook-input').value.trim() || null
   const tiktok_url = document.getElementById('tiktok-input').value.trim() || null
+  const address = document.getElementById('address-input').value.trim() || null
 
   const { error } = await sb.from('businesses').update({
-    open_time, close_time, whatsapp_number, instagram_url, facebook_url, tiktok_url
+    open_time, close_time, whatsapp_number, instagram_url, facebook_url, tiktok_url, address
   }).eq('id', bid)
 
   if (error) { toast(`Error al guardar: ${error.message}`, false); return }
@@ -862,5 +894,90 @@ window.savePaymentInfo = async () => {
 
 // Inicializar drag si ya hay cover cargado
 initDrag()
+
+// ── Ubicación ────────────────────────────────────────
+let locationMap = null
+let locationMarker = null
+
+function makeLocationIcon() {
+  return window.L.divIcon({
+    html: `<div style="width:16px;height:16px;border-radius:50%;background:#B04030;border:2px solid #FAF6F0;box-shadow:0 0 0 5px rgba(176,64,48,0.25)"></div>`,
+    className: '', iconAnchor: [8, 8]
+  })
+}
+
+function updateCoordsDisplay(lat, lng) {
+  document.getElementById('location-coords-display').textContent = `📍 Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`
+}
+
+function placeMarker(lat, lng) {
+  if (locationMarker) {
+    locationMarker.setLatLng([lat, lng])
+  } else {
+    locationMarker = window.L.marker([lat, lng], { icon: makeLocationIcon(), draggable: true }).addTo(locationMap)
+    locationMarker.on('dragend', () => {
+      const pos = locationMarker.getLatLng()
+      updateCoordsDisplay(pos.lat, pos.lng)
+    })
+  }
+  updateCoordsDisplay(lat, lng)
+}
+
+function initLocationMap() {
+  const cfg = document.getElementById('menu-cfg')
+  const existingLat = parseFloat(cfg.dataset.lat)
+  const existingLng = parseFloat(cfg.dataset.lng)
+  const hasExisting = !isNaN(existingLat) && !isNaN(existingLng)
+  // Centro por default: Chihuahua, Chih. — si ya hay ubicación guardada, esa gana.
+  const startLat = hasExisting ? existingLat : 28.6353
+  const startLng = hasExisting ? existingLng : -106.0889
+
+  locationMap = window.L.map('location-map', { zoomControl: true }).setView([startLat, startLng], hasExisting ? 16 : 13)
+  window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap, © CARTO', maxZoom: 19
+  }).addTo(locationMap)
+
+  if (hasExisting) placeMarker(startLat, startLng)
+
+  locationMap.on('click', (e) => placeMarker(e.latlng.lat, e.latlng.lng))
+
+  setTimeout(() => locationMap.invalidateSize(), 150)
+}
+
+window.searchLocation = async () => {
+  const query = document.getElementById('location-search-input').value.trim()
+  if (!query) return
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Chihuahua, México')}&limit=1`)
+    const data = await res.json()
+    if (!data || data.length === 0) {
+      toast('No encontramos esa dirección, intenta ser más específico', false)
+      return
+    }
+    const lat = parseFloat(data[0].lat)
+    const lng = parseFloat(data[0].lon)
+    locationMap.setView([lat, lng], 16)
+    placeMarker(lat, lng)
+  } catch (e) {
+    toast('No se pudo buscar, intenta de nuevo', false)
+  }
+}
+
+window.saveLocation = async () => {
+  if (!locationMarker) {
+    toast('Marca tu ubicación en el mapa antes de guardar', false)
+    return
+  }
+  const pos = locationMarker.getLatLng()
+  const cfg = document.getElementById('menu-cfg')
+  const bid = cfg.dataset.bid
+  const { error } = await sb.from('businesses').update({
+    latitude: pos.lat, longitude: pos.lng
+  }).eq('id', bid)
+  if (error) { toast(`Error al guardar ubicación: ${error.message}`, false); return }
+  toast('¡Ubicación guardada!')
+}
+
+initLocationMap()
 </script>
 </html>
