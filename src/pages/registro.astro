@@ -61,6 +61,11 @@ export const prerender = false
     .field-input::placeholder{color:var(--text-3)}
     .field-hint{font-size:12px;color:var(--text-3)}
 
+    .terms-check{display:flex;gap:9px;align-items:flex-start;margin:6px 0 18px}
+    .terms-check input{margin-top:3px;flex-shrink:0;accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+    .terms-check label{font-size:13px;color:var(--text-3);line-height:1.5;cursor:pointer}
+    .terms-check a{color:var(--accent)}
+
     .submit-btn{
       width:100%;margin-top:8px;background:var(--accent);color:var(--bg-deep);
       border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;
@@ -117,6 +122,13 @@ export const prerender = false
       <span class="field-hint">Con código de país, sin + ni espacios. Lo puedes agregar después si no lo tienes a la mano.</span>
     </div>
 
+    <div class="terms-check">
+      <input type="checkbox" id="terms-checkbox"/>
+      <label for="terms-checkbox">
+        Leí y acepto los <a href="/terminos" target="_blank">Términos y Condiciones</a> y el <a href="/privacidad" target="_blank">Aviso de Privacidad</a>.
+      </label>
+    </div>
+
     <button class="submit-btn" id="submit-btn" onclick="handleRegister()">Crear mi cuenta</button>
 
     <p class="login-link">¿Ya tienes cuenta? <a href="/login">Inicia sesión</a></p>
@@ -160,6 +172,10 @@ export const prerender = false
       if (!businessName) { showError('Escribe el nombre de tu negocio'); return }
       if (!email) { showError('Escribe tu correo'); return }
       if (password.length < 8) { showError('La contraseña debe tener al menos 8 caracteres'); return }
+      if (!document.getElementById('terms-checkbox').checked) {
+        showError('Acepta los Términos y el Aviso de Privacidad para continuar')
+        return
+      }
 
       btn.disabled = true
       btn.textContent = 'Creando tu cuenta...'

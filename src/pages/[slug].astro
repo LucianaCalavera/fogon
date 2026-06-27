@@ -400,6 +400,8 @@ const hasInfo = (business.open_time && business.close_time) || business.whatsapp
       font-family:'Inter',sans-serif;transition:opacity 0.15s;
     }
     .confirm-btn:disabled{opacity:0.5}
+    .privacy-note{font-size:11.5px;color:var(--text-muted);text-align:center;margin-top:10px;font-family:'Inter',sans-serif}
+    .privacy-note a{color:var(--teja);text-decoration:underline}
     .error-msg{display:none;color:#f87171;font-size:13px;text-align:center;margin-top:8px;font-family:'Inter',sans-serif}
 
     /* Pantalla de instrucciones de pago */
@@ -651,6 +653,7 @@ const hasInfo = (business.open_time && business.close_time) || business.whatsapp
       </div>
       <button class="confirm-btn" id="confirm-btn" onclick="handleSubmit()">Confirmar pedido</button>
       <p class="error-msg" id="error-msg"></p>
+      <p class="privacy-note">Tus datos se usan solo para entregar tu pedido. <a href="/privacidad" target="_blank">Aviso de privacidad</a></p>
     </div>
   </div>
 </div>
