@@ -307,6 +307,10 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
       margin-bottom:12px;background:var(--bg-deep);cursor:crosshair;
     }
     .location-coords{font-size:13px;color:var(--text-3);margin-bottom:14px;font-family:'Inter',sans-serif}
+
+    .qr-box{display:flex;flex-direction:column;align-items:center;gap:10px}
+    .qr-box canvas{border-radius:10px}
+    .qr-url{font-size:13px;color:var(--text-2);font-family:'Inter',sans-serif;word-break:break-all;text-align:center}
     .payment-row{display:flex;gap:18px;align-items:flex-start}
     .payment-fields{flex:1}
     @media(max-width:640px){.payment-row{flex-direction:column;align-items:center}}
@@ -460,6 +464,17 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
         <button class="save-contact-btn" onclick="saveLocation()">Guardar ubicación</button>
       </div>
 
+      <!-- QR para tu mesa -->
+      <div class="contact-section">
+        <p class="contact-title">QR para tu mesa</p>
+        <p class="payment-hint">Imprímelo en tus mesas, en una calcomanía o en tu vitrina — tus clientes lo escanean y caen directo a tu tienda.</p>
+        <div class="qr-box">
+          <canvas id="qr-canvas"></canvas>
+          <p class="qr-url" id="qr-url-text"></p>
+          <button class="add-btn" onclick="downloadQr()">Descargar QR</button>
+        </div>
+      </div>
+
       <!-- Cobro por transferencia -->
       <div class="contact-section">
         <p class="contact-title">Cobro por transferencia</p>
@@ -579,10 +594,11 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
   </main>
 
   <div class="upload-toast" id="toast"></div>
-  <div id="menu-cfg" data-bid={business.id} data-url={supabaseUrl} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} hidden/>
+  <div id="menu-cfg" data-bid={business.id} data-url={supabaseUrl} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} data-slug={business.slug} hidden/>
 </body>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script>
 import { createBrowserClient } from '@supabase/ssr'
 
@@ -979,5 +995,32 @@ window.saveLocation = async () => {
 }
 
 initLocationMap()
+
+// ── QR para la mesa ──────────────────────────────────
+function initQr() {
+  const cfg = document.getElementById('menu-cfg')
+  const slug = cfg.dataset.slug
+  const storeUrl = `${window.location.origin}/${slug}`
+
+  document.getElementById('qr-url-text').textContent = storeUrl
+
+  const canvas = document.getElementById('qr-canvas')
+  window.QRCode.toCanvas(canvas, storeUrl, {
+    width: 220,
+    margin: 2,
+    color: { dark: '#0A0608', light: '#FFFFFF' }
+  })
+}
+
+window.downloadQr = () => {
+  const canvas = document.getElementById('qr-canvas')
+  const cfg = document.getElementById('menu-cfg')
+  const link = document.createElement('a')
+  link.download = `qr-${cfg.dataset.slug}.png`
+  link.href = canvas.toDataURL('image/png')
+  link.click()
+}
+
+initQr()
 </script>
 </html>
