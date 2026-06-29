@@ -721,7 +721,7 @@ const hasInfo = (business.open_time && business.close_time) || business.whatsapp
 
 <div id="cfg" data-bid={business.id} data-slug={business.slug} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} data-manual-open={String(business.is_open)} data-open-time={business.open_time ?? ''} data-close-time={business.close_time ?? ''} data-whatsapp={business.whatsapp_number ?? ''} hidden></div>
 
-{hasMap && <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>}
+{hasMap && <script is:inline src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>}
 </body>
 
 <script>

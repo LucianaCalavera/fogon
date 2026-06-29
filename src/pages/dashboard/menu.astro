@@ -612,8 +612,8 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
   <div id="menu-cfg" data-bid={business.id} data-url={supabaseUrl} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} data-slug={business.slug} hidden/>
 </body>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script is:inline src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script is:inline src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script>
 import { createBrowserClient } from '@supabase/ssr'
 
@@ -1099,7 +1099,9 @@ window.saveLocation = async () => {
 initLocationMap()
 
 // ── QR para la mesa ──────────────────────────────────
-function initQr() {
+let qrReady = false
+
+async function initQr() {
   const cfg = document.getElementById('menu-cfg')
   const slug = cfg.dataset.slug
   const storeUrl = `${window.location.origin}/${slug}`
@@ -1107,14 +1109,27 @@ function initQr() {
   document.getElementById('qr-url-text').textContent = storeUrl
 
   const canvas = document.getElementById('qr-canvas')
-  window.QRCode.toCanvas(canvas, storeUrl, {
-    width: 220,
-    margin: 2,
-    color: { dark: '#0A0608', light: '#FFFFFF' }
-  })
+  try {
+    // ← Si la librería de QR no cargó (bloqueador de anuncios, Shields
+    // de Brave, o sin internet), esto truena aquí en vez de dejar el
+    // canvas en blanco y que el botón descargue una imagen vacía.
+    await window.QRCode.toCanvas(canvas, storeUrl, {
+      width: 220,
+      margin: 2,
+      color: { dark: '#0A0608', light: '#FFFFFF' }
+    })
+    qrReady = true
+  } catch (e) {
+    qrReady = false
+    toast('No se pudo generar el QR — revisa tu conexión o que no esté bloqueado por Shields/un bloqueador de anuncios, y recarga la página', false)
+  }
 }
 
 window.downloadQr = () => {
+  if (!qrReady) {
+    toast('El QR todavía no está listo — recarga la página e intenta de nuevo', false)
+    return
+  }
   const canvas = document.getElementById('qr-canvas')
   const cfg = document.getElementById('menu-cfg')
   const link = document.createElement('a')
