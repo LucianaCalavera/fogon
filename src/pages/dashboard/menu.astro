@@ -613,9 +613,9 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
 </body>
 
 <script is:inline src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script is:inline src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script>
 import { createBrowserClient } from '@supabase/ssr'
+import QRCode from 'qrcode'
 
 const sb = createBrowserClient(
   import.meta.env.PUBLIC_SUPABASE_URL,
@@ -1113,7 +1113,7 @@ async function initQr() {
     // ← Si la librería de QR no cargó (bloqueador de anuncios, Shields
     // de Brave, o sin internet), esto truena aquí en vez de dejar el
     // canvas en blanco y que el botón descargue una imagen vacía.
-    await window.QRCode.toCanvas(canvas, storeUrl, {
+    await QRCode.toCanvas(canvas, storeUrl, {
       width: 220,
       margin: 2,
       color: { dark: '#0A0608', light: '#FFFFFF' }
