@@ -467,7 +467,7 @@ const hasInfo = (business.open_time && business.close_time) || business.whatsapp
       <h1 class="sb-name">{business.name}</h1>
       {business.description && <p class="sb-desc">{business.description}</p>}
       <div class="sb-status">
-        <span class={`status-badge ${isOpenNow ? 'status-open' : 'status-closed'}`}>
+        <span class={`status-badge ${isOpenNow ? 'status-open' : 'status-closed'}`} id="status-badge">
           {isOpenNow ? '● Abierto' : '○ Cerrado'}
         </span>
         {business.open_time && business.close_time && (
@@ -484,17 +484,18 @@ const hasInfo = (business.open_time && business.close_time) || business.whatsapp
       <span class="recent-order-link">Ver estado →</span>
     </a>
 
-    <!-- ← CART GUARD: Banner cuando está cerrado -->
-    {!isOpenNow && (
-      <div class="closed-banner">
-        <div class="closed-banner-icon">🔒</div>
-        <div class="closed-banner-title">Cerrado por ahora</div>
-        <div class="closed-banner-text">No puedes hacer pedidos en este momento</div>
-        {nextOpenText && (
-          <div class="closed-banner-hours">{nextOpenText}</div>
-        )}
-      </div>
-    )}
+    <!-- ← CART GUARD: Banner cuando está cerrado. Siempre se
+         renderiza (oculto si está abierto) para poder mostrarlo en
+         vivo si el negocio cierra mientras el cliente ya tiene la
+         tienda abierta, sin que tenga que refrescar. -->
+    <div class="closed-banner" id="closed-banner" style={isOpenNow ? 'display:none' : ''}>
+      <div class="closed-banner-icon">🔒</div>
+      <div class="closed-banner-title">Cerrado por ahora</div>
+      <div class="closed-banner-text">No puedes hacer pedidos en este momento</div>
+      {nextOpenText && (
+        <div class="closed-banner-hours">{nextOpenText}</div>
+      )}
+    </div>
 
     {business.cover_url
       ? <img src={business.cover_url} alt="" class="sb-cover" style={`object-position:${business.cover_position ?? '50% 50%'}`}/>
@@ -718,19 +719,61 @@ const hasInfo = (business.open_time && business.close_time) || business.whatsapp
   </div>
 </div>
 
-<div id="cfg" data-bid={business.id} data-slug={business.slug} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} data-is-open={String(isOpenNow)} data-whatsapp={business.whatsapp_number ?? ''} hidden></div>
+<div id="cfg" data-bid={business.id} data-slug={business.slug} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} data-manual-open={String(business.is_open)} data-open-time={business.open_time ?? ''} data-close-time={business.close_time ?? ''} data-whatsapp={business.whatsapp_number ?? ''} hidden></div>
 
 {hasMap && <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>}
 </body>
 
 <script>
 import { createClient } from '@supabase/supabase-js'
+import { isBusinessOpen } from '../lib/schedule'
 
 const cfg = document.getElementById('cfg')
 const businessId = cfg.dataset.bid
 const businessSlug = cfg.dataset.slug
-const isOpenNow = cfg.dataset.isOpen === 'true'
+const openTime = cfg.dataset.openTime || null
+const closeTime = cfg.dataset.closeTime || null
+let manualOpen = cfg.dataset.manualOpen === 'true'
+let isOpenNow = isBusinessOpen(openTime, closeTime, manualOpen)
 const sb = createClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUBLIC_SUPABASE_ANON_KEY)
+
+// ── Estado abierto/cerrado en vivo ──────────────────
+// Antes esto se calculaba una sola vez al cargar la página — si el
+// negocio cerraba mientras el cliente ya tenía la tienda abierta, se
+// quedaba viendo "Abierto" hasta que refrescara. Ahora escuchamos
+// cambios en `businesses` y recalculamos sin recargar nada.
+function applyOpenState() {
+  isOpenNow = isBusinessOpen(openTime, closeTime, manualOpen)
+
+  const badge = document.getElementById('status-badge')
+  if (badge) {
+    badge.className = `status-badge ${isOpenNow ? 'status-open' : 'status-closed'}`
+    badge.textContent = isOpenNow ? '● Abierto' : '○ Cerrado'
+  }
+
+  const closedBanner = document.getElementById('closed-banner')
+  if (closedBanner) closedBanner.style.display = isOpenNow ? 'none' : ''
+
+  document.querySelectorAll('.product-item').forEach(el => {
+    el.style.opacity = isOpenNow ? '' : '0.6'
+    el.style.cursor = isOpenNow ? '' : 'not-allowed'
+  })
+  document.querySelectorAll('.add-btn').forEach(btn => { btn.disabled = !isOpenNow })
+
+  if (typeof updateUI === 'function') updateUI()
+}
+
+sb.channel('business-status')
+  .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'businesses', filter: `id=eq.${businessId}` },
+    payload => {
+      manualOpen = !!payload.new.is_open
+      applyOpenState()
+    })
+  .subscribe()
+
+// También recalculamos cada minuto, por si el negocio cruza su hora
+// de apertura/cierre mientras el cliente sigue con la tienda abierta.
+setInterval(applyOpenState, 60000)
 
 // ── Pedido reciente (mismo navegador) ──────────────
 // Capa automática, de respaldo: si no cerraron el link a propósito
