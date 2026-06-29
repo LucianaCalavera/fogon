@@ -148,7 +148,7 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     .product-row{
       background:var(--bg-surface);border-radius:12px;border:1px solid var(--border);
       padding:14px 18px;display:grid;
-      grid-template-columns:110px 1fr auto auto auto;
+      grid-template-columns:110px 1fr auto auto auto auto;
       align-items:center;gap:16px;transition:border-color 0.15s;
     }
     .product-row:hover{border-color:rgba(250,246,240,0.12)}
@@ -180,9 +180,17 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     .stock-input:focus{border-color:var(--accent-border)}
     .stock-input.warn{border-color:var(--danger-border);color:var(--danger)}
     .alert-ctrl{display:flex;align-items:center;gap:5px;white-space:nowrap}
+    .alert-ctrl-empty{min-width:90px}
     .alert-label{font-size:12px;color:var(--text-3)}
     .alert-input{width:46px;background:var(--bg-deep);color:var(--text-2);border:1px solid var(--border);border-radius:7px;padding:6px 6px;font-size:13px;text-align:center;outline:none;font-family:'Inter',sans-serif}
     .activate-btn{font-size:13px;background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border);border-radius:7px;padding:6px 12px;cursor:pointer;font-family:'Inter',sans-serif}
+    .delete-btn{
+      width:32px;height:32px;border-radius:8px;flex-shrink:0;
+      background:none;border:1px solid var(--danger-border);color:var(--danger);
+      cursor:pointer;display:flex;align-items:center;justify-content:center;
+      transition:background 0.15s;
+    }
+    .delete-btn:hover{background:var(--danger-dim)}
 
     /* Logo */
     .logo-label{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer}
@@ -565,14 +573,21 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
                 }
               </div>
 
-              {product.stock !== null && (
-                <div class="alert-ctrl">
-                  <span class="alert-label">⚠️ si &lt;</span>
-                  <input class="alert-input" id={`alt-${product.id}`} type="number" min="1"
-                    value={product.low_stock_alert ?? 5}
-                    onchange={`updateAlert('${product.id}', this.value)`}/>
-                </div>
-              )}
+              {product.stock !== null
+                ? (
+                  <div class="alert-ctrl">
+                    <span class="alert-label">⚠️ si &lt;</span>
+                    <input class="alert-input" id={`alt-${product.id}`} type="number" min="1"
+                      value={product.low_stock_alert ?? 5}
+                      onchange={`updateAlert('${product.id}', this.value)`}/>
+                  </div>
+                )
+                : <div class="alert-ctrl-empty"></div>
+              }
+
+              <button class="delete-btn" data-id={product.id} data-name={product.name} onclick="confirmDeleteProduct(this)" aria-label={`Borrar ${product.name}`}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m5 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+              </button>
             </div>
           ))}
         </div>
@@ -606,6 +621,68 @@ const sb = createBrowserClient(
   import.meta.env.PUBLIC_SUPABASE_URL,
   import.meta.env.PUBLIC_SUPABASE_ANON_KEY
 )
+
+// ── Alerta de pedido nuevo (sonido + notificación) ──
+// Pedidos/Menú/Reportes son páginas completas separadas — si no
+// repetimos esta suscripción aquí también, la alerta solo suena
+// mientras estás parado en la pestaña de Pedidos.
+const menuAlertCfg = document.getElementById('menu-cfg')
+const orderAlertBid = menuAlertCfg.dataset.bid
+
+let audioCtx = null
+document.addEventListener('click', () => {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+})
+
+function playOrderSound() {
+  try {
+    const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)()
+    const times = [0, 0.15, 0.3]
+    times.forEach(t => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain); gain.connect(ctx.destination)
+      osc.frequency.value = 880
+      osc.type = 'sine'
+      gain.gain.setValueAtTime(0, ctx.currentTime + t)
+      gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + t + 0.02)
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + t + 0.18)
+      osc.start(ctx.currentTime + t)
+      osc.stop(ctx.currentTime + t + 0.2)
+    })
+  } catch (e) {}
+}
+
+function sendOrderNotification(order) {
+  if (Notification.permission !== 'granted') return
+  const n = new Notification('🔥 Nuevo pedido — Fogón', {
+    body: `${order.customer_name} · ${new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(order.total)} · ${order.order_type === 'pickup' ? '🏪 Recoger' : '🛵 Domicilio'}`,
+    icon: '/favicon.svg',
+    badge: '/favicon.svg',
+    vibrate: [200, 100, 200],
+    tag: 'new-order',
+    renotify: true
+  })
+  n.onclick = () => { window.focus(); n.close() }
+}
+
+async function startOrderAlertRealtime() {
+  const { data: { session } } = await sb.auth.getSession()
+  if (session) sb.realtime.setAuth(session.access_token)
+
+  sb.channel('orders-alert')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: `business_id=eq.${orderAlertBid}` },
+      payload => {
+        playOrderSound()
+        sendOrderNotification(payload.new)
+      })
+    .subscribe()
+}
+startOrderAlertRealtime()
+
+sb.auth.onAuthStateChange((_event, session) => {
+  if (session) sb.realtime.setAuth(session.access_token)
+})
 
 function toast(msg, ok = true) {
   const el = document.getElementById('toast')
@@ -720,6 +797,31 @@ window.updateAlert = async (id, val) => {
 window.enableStock = async (id) => {
   await sb.from('products').update({ stock: 10, low_stock_alert: 5 }).eq('id', id)
   window.location.reload()
+}
+
+// ── Borrar producto ───────────────────────────────
+// Usamos data-attributes en el botón (en vez de pasar el nombre por
+// el onclick) para no pelearnos con comillas dentro de nombres de
+// producto como "Café c/ leche".
+window.confirmDeleteProduct = (btn) => {
+  const id = btn.dataset.id
+  const name = btn.dataset.name
+  if (!confirm(`¿Borrar "${name}" del menú? Esta acción no se puede deshacer.`)) return
+  deleteProduct(id)
+}
+
+async function deleteProduct(id) {
+  const { error } = await sb.from('products').delete().eq('id', id)
+  if (error) {
+    // Si el producto ya tiene pedidos asociados, el borrado puede
+    // fallar por la relación con esa tabla — se lo decimos a Lucía
+    // tal cual en vez de adivinarle.
+    toast(`Error al borrar: ${error.message}`, false)
+    return
+  }
+  const row = document.getElementById(`row-${id}`)
+  if (row) row.remove()
+  toast('Producto borrado')
 }
 
 window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }

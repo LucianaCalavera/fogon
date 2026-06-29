@@ -334,6 +334,8 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
 
     </>)}
   </main>
+
+  <div id="reportes-cfg" data-bid={business.id} hidden></div>
 </body>
 
 <script>
@@ -343,5 +345,67 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     import.meta.env.PUBLIC_SUPABASE_ANON_KEY
   )
   window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
+
+  // ── Alerta de pedido nuevo (sonido + notificación) ──
+  // Pedidos/Menú/Reportes son páginas completas separadas — si no
+  // repetimos esta suscripción aquí también, la alerta solo suena
+  // mientras estás parado en la pestaña de Pedidos.
+  const reportesCfg = document.getElementById('reportes-cfg')
+  const orderAlertBid = reportesCfg.dataset.bid
+
+  let audioCtx = null
+  document.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+  })
+
+  function playOrderSound() {
+    try {
+      const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)()
+      const times = [0, 0.15, 0.3]
+      times.forEach(t => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.frequency.value = 880
+        osc.type = 'sine'
+        gain.gain.setValueAtTime(0, ctx.currentTime + t)
+        gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + t + 0.02)
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + t + 0.18)
+        osc.start(ctx.currentTime + t)
+        osc.stop(ctx.currentTime + t + 0.2)
+      })
+    } catch (e) {}
+  }
+
+  function sendOrderNotification(order) {
+    if (Notification.permission !== 'granted') return
+    const n = new Notification('🔥 Nuevo pedido — Fogón', {
+      body: `${order.customer_name} · ${new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(order.total)} · ${order.order_type === 'pickup' ? '🏪 Recoger' : '🛵 Domicilio'}`,
+      icon: '/favicon.svg',
+      badge: '/favicon.svg',
+      vibrate: [200, 100, 200],
+      tag: 'new-order',
+      renotify: true
+    })
+    n.onclick = () => { window.focus(); n.close() }
+  }
+
+  async function startOrderAlertRealtime() {
+    const { data: { session } } = await sb.auth.getSession()
+    if (session) sb.realtime.setAuth(session.access_token)
+
+    sb.channel('orders-alert')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: `business_id=eq.${orderAlertBid}` },
+        payload => {
+          playOrderSound()
+          sendOrderNotification(payload.new)
+        })
+      .subscribe()
+  }
+  startOrderAlertRealtime()
+
+  sb.auth.onAuthStateChange((_event, session) => {
+    if (session) sb.realtime.setAuth(session.access_token)
+  })
 </script>
 </html>

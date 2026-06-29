@@ -847,14 +847,31 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     list.insertAdjacentElement('afterbegin', card)
   }
 
-  sb.channel('orders-realtime')
-    .on('postgres_changes', { event:'INSERT', schema:'public', table:'orders', filter:`business_id=eq.${businessId}` },
-      payload => {
-        addOrderCard(payload.new)
-        playOrderSound()
-        sendOrderNotification(payload.new)
-      })
-    .subscribe()
+  // ← Antes de suscribirnos, hay que asegurarnos de que Realtime ya
+  // tenga tu token de sesión — si te conectas antes de que cargue,
+  // Realtime te trata como anónimo y la política de RLS (que exige
+  // auth.uid()) nunca deja pasar los eventos. Por eso el refresh
+  // manual sí jalaba (esa carga sí espera al login completo).
+  async function startOrdersRealtime() {
+    const { data: { session } } = await sb.auth.getSession()
+    if (session) sb.realtime.setAuth(session.access_token)
+
+    sb.channel('orders-realtime')
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'orders', filter:`business_id=eq.${businessId}` },
+        payload => {
+          addOrderCard(payload.new)
+          playOrderSound()
+          sendOrderNotification(payload.new)
+        })
+      .subscribe()
+  }
+  startOrdersRealtime()
+
+  // Si la sesión se refresca mientras tienes el dashboard abierto
+  // (turnos largos), reautenticamos Realtime con el token nuevo.
+  sb.auth.onAuthStateChange((_event, session) => {
+    if (session) sb.realtime.setAuth(session.access_token)
+  })
 
   function playOrderSound() {
     try {

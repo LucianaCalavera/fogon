@@ -286,6 +286,19 @@ const hasInfo = (business.open_time && business.close_time) || business.whatsapp
     }
     .add-btn:disabled:active{opacity:0.4}
 
+    /* Mini stepper +/- directo en cada producto — aparece en cuanto
+       el producto entra al carrito, sin abrir el carrito completo */
+    .qty-controls{display:flex;align-items:center;gap:6px;flex-shrink:0}
+    .mini-qty-btn{
+      width:28px;height:28px;border-radius:50%;
+      background:var(--teja);border:none;cursor:pointer;color:var(--cream);
+      font-size:16px;font-weight:600;line-height:1;
+      display:flex;align-items:center;justify-content:center;
+      transition:opacity 0.15s;flex-shrink:0;font-family:'Inter',sans-serif;
+    }
+    .mini-qty-btn:active{opacity:0.8}
+    .mini-qty-num{font-size:13px;font-weight:600;color:var(--text-dark);min-width:14px;text-align:center;font-family:'Inter',sans-serif}
+
     /* Estado vacío */
     .empty{text-align:center;padding:60px 20px;color:var(--text-muted)}
     .empty-title{font-family:'Cormorant Garamond',serif;font-size:20px;color:var(--text-muted);margin-top:10px}
@@ -596,14 +609,19 @@ const hasInfo = (business.open_time && business.close_time) || business.whatsapp
               </div>
 
               <!-- ← CART GUARD: Botón deshabilitado cuando cerrado -->
-              <button 
-                class="add-btn" 
-                aria-label={`Agregar ${product.name}`}
-                disabled={!isOpenNow}
-                onclick={isOpenNow ? undefined : 'event.stopPropagation();'}
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              </button>
+              <!-- ← qty-controls: arranca con solo el "+"; en cuanto
+                   el producto entra al carrito, JS lo cambia a
+                   "− cantidad +" aquí mismo, sin abrir el carrito -->
+              <div class="qty-controls" data-qty-for={product.id}>
+                <button 
+                  class="add-btn" 
+                  aria-label={`Agregar ${product.name}`}
+                  disabled={!isOpenNow}
+                  onclick={isOpenNow ? undefined : 'event.stopPropagation();'}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+              </div>
             </div>
           ))}
         </section>
@@ -700,7 +718,7 @@ const hasInfo = (business.open_time && business.close_time) || business.whatsapp
   </div>
 </div>
 
-<div id="cfg" data-bid={business.id} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} data-is-open={String(isOpenNow)} data-whatsapp={business.whatsapp_number ?? ''} hidden></div>
+<div id="cfg" data-bid={business.id} data-slug={business.slug} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} data-is-open={String(isOpenNow)} data-whatsapp={business.whatsapp_number ?? ''} hidden></div>
 
 {hasMap && <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>}
 </body>
@@ -710,6 +728,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const cfg = document.getElementById('cfg')
 const businessId = cfg.dataset.bid
+const businessSlug = cfg.dataset.slug
 const isOpenNow = cfg.dataset.isOpen === 'true'
 const sb = createClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUBLIC_SUPABASE_ANON_KEY)
 
@@ -718,13 +737,25 @@ const sb = createClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUB
 // y vuelven a la tienda desde el mismo celular, se los recordamos.
 // No sustituye "Guardar este link" — ese funciona desde cualquier
 // lado; esto solo ayuda si nunca se movieron de este navegador.
-;(() => {
+;(async () => {
   try {
     const key = `fogon_last_order_${businessId}`
     const saved = JSON.parse(localStorage.getItem(key) || 'null')
     if (!saved) return
     const hoursSince = (Date.now() - saved.createdAt) / 3600000
     if (hoursSince > 6) { localStorage.removeItem(key); return }
+
+    // Si el pedido ya se entregó o se canceló, no tiene caso seguir
+    // recordándolo — limpiamos y dejamos la tienda lista para uno nuevo
+    // en vez de apuntar a un pedido que ya terminó.
+    const { data: statusRow } = await sb
+      .from('order_status_public').select('status')
+      .eq('order_id', saved.orderId).maybeSingle()
+    if (statusRow && (statusRow.status === 'delivered' || statusRow.status === 'cancelled')) {
+      localStorage.removeItem(key)
+      return
+    }
+
     const banner = document.getElementById('recent-order-banner')
     banner.href = `/pedido/${saved.orderId}`
     banner.style.display = 'flex'
@@ -780,7 +811,26 @@ function updateUI() {
   const count = cart.reduce((s,i) => s + i.qty, 0)
   const total = getTotal()
   const bar = document.getElementById('cart-bar')
-  
+
+  // ← Botones +/- directo en cada producto del menú. Se actualiza
+  // siempre (incluso si el carrito vuelve a 0), para que el producto
+  // regrese a mostrar solo el "+" cuando ya no tiene nada en el carrito.
+  document.querySelectorAll('.qty-controls').forEach(el => {
+    const id = el.dataset.qtyFor
+    const item = cart.find(i => i.id === id)
+    if (item && item.qty > 0) {
+      el.innerHTML = `
+        <button class="mini-qty-btn" onclick="event.stopPropagation(); changeQty('${id}',-1)" aria-label="Quitar uno">−</button>
+        <span class="mini-qty-num">${item.qty}</span>
+        <button class="mini-qty-btn" onclick="event.stopPropagation(); changeQty('${id}',1)" aria-label="Agregar uno">+</button>`
+    } else {
+      el.innerHTML = `
+        <button class="add-btn" aria-label="Agregar"${!isOpenNow ? ' disabled' : ''}${isOpenNow ? '' : ' onclick="event.stopPropagation();"'}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>`
+    }
+  })
+
   // ← CART GUARD: Solo mostrar carrito si está abierto y hay items
   if (!isOpenNow || count === 0) {
     bar.style.display = 'none'
@@ -883,7 +933,7 @@ window.handleSubmit = async () => {
       // Redirige a la página de seguimiento — URL real, sobrevive a un
       // refresh y se puede compartir/guardar (antes era solo un overlay
       // en esta misma página que se perdía al recargar).
-      window.location.href = `/pedido/${orderId}`
+      window.location.href = `/pedido/${orderId}?slug=${encodeURIComponent(businessSlug)}`
     }
   } catch(err) {
     errEl.textContent = 'Algo salió mal, intenta de nuevo'
@@ -911,7 +961,7 @@ window.confirmTransferSent = () => {
   // que fallaba — competían entre sí), mandamos los datos por la URL
   // y dejamos que /pedido/{id} muestre el botón de WhatsApp ahí,
   // sin pelear con la navegación.
-  const params = new URLSearchParams({ amt: amount, num: orderNum })
+  const params = new URLSearchParams({ amt: amount, num: orderNum, slug: businessSlug })
   if (whatsapp) params.set('wa', whatsapp)
 
   window.location.href = `/pedido/${orderId}?${params.toString()}`

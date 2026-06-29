@@ -36,10 +36,13 @@ const waMessage = waNumber
   : ''
 const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(waMessage)}` : null
 
-// Si la tabla algún día incluye business_id, mostramos un link para
-// volver a pedir — si no existe la columna, simplemente se omite.
-let businessSlug = null
-if (!notFound && tracking?.business_id) {
+// ← El slug viene directo por la URL desde [slug].astro al crear el
+// pedido (mismo patrón que wa/amt/num) — no depende de que
+// order_status_public tenga business_id, que es lo que fallaba antes.
+let businessSlug = Astro.url.searchParams.get('slug') || null
+
+// Respaldo para links viejos que ya estén circulando sin ?slug=.
+if (!businessSlug && !notFound && tracking?.business_id) {
   const { data: biz } = await supabase
     .from('businesses')
     .select('slug')
@@ -131,6 +134,14 @@ if (!notFound && tracking?.business_id) {
       border-radius:10px;padding:9px 18px;font-size:13px;font-weight:600;
       cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:20px;
     }
+    .back-link-cta{
+      display:inline-flex;align-items:center;gap:8px;
+      background:var(--teja);color:var(--cream);
+      text-decoration:none;border-radius:10px;
+      padding:13px 26px;font-size:15px;font-weight:700;
+      margin-top:6px;
+    }
+    .redirect-countdown{font-size:12px;color:var(--text-muted);margin-top:10px;font-family:'Inter',sans-serif}
   </style>
 </head>
 <body>
@@ -184,11 +195,12 @@ if (!notFound && tracking?.business_id) {
         </div>
       </div>
 
-      {businessSlug && <a class="back-link" href={`/${businessSlug}`}>Hacer otro pedido</a>}
+      {businessSlug && <a class="back-link" id="back-link" href={`/${businessSlug}`}>Hacer otro pedido</a>}
+      {businessSlug && <p class="redirect-countdown" id="redirect-countdown" style="display:none"></p>}
     </>
   )}
 
-  <div id="track-cfg" data-order-id={id} data-order-type={orderType} data-initial-status={initialStatus} hidden></div>
+  <div id="track-cfg" data-order-id={id} data-order-type={orderType} data-initial-status={initialStatus} data-business-id={tracking?.business_id ?? ''} data-business-slug={businessSlug ?? ''} hidden></div>
 
   {!notFound && (
     <script>
@@ -226,6 +238,16 @@ if (!notFound && tracking?.business_id) {
       const orderId = cfg.dataset.orderId
       const orderType = cfg.dataset.orderType
       const initialStatus = cfg.dataset.initialStatus
+      const businessId = cfg.dataset.businessId
+      const businessSlug = cfg.dataset.businessSlug
+
+      // El pedido ya terminó (entregado o cancelado) — borramos el
+      // aviso de "pedido reciente" de la tienda para que no se quede
+      // apuntando a algo que ya no aplica.
+      function clearRecentOrder() {
+        if (!businessId) return
+        try { localStorage.removeItem(`fogon_last_order_${businessId}`) } catch (e) {}
+      }
 
       let audioCtx = null
       document.addEventListener('click', () => {
@@ -279,6 +301,7 @@ if (!notFound && tracking?.business_id) {
           const pending = document.getElementById('step-pending')
           if (pending) { pending.className = 'status-step cancelled'; pending.querySelector('.step-label').textContent = 'Pedido cancelado'; pending.querySelector('.step-sub').textContent = 'Contacta al negocio para más info' }
           document.getElementById('success-title').textContent = '❌ Pedido cancelado'
+          clearRecentOrder()
           return
         }
 
@@ -303,6 +326,30 @@ if (!notFound && tracking?.business_id) {
           const el = document.getElementById('step-ready')
           if (el) el.className = 'status-step done'
           document.getElementById('success-title').textContent = '✅ ¡Entregado! Buen provecho'
+          clearRecentOrder()
+          const back = document.getElementById('back-link')
+          if (back) { back.classList.add('back-link-cta'); back.textContent = '🍽️ Hacer otro pedido' }
+
+          // Regresamos solos a la tienda después de unos segundos —
+          // así no se queda la pantalla "muerta" esperando a que el
+          // cliente sepa que tiene que volver él mismo.
+          if (businessSlug) {
+            let secondsLeft = 8
+            const countdown = document.getElementById('redirect-countdown')
+            if (countdown) {
+              countdown.style.display = 'block'
+              countdown.textContent = `Te llevamos al menú en ${secondsLeft}s…`
+              const interval = setInterval(() => {
+                secondsLeft--
+                if (secondsLeft <= 0) {
+                  clearInterval(interval)
+                  window.location.href = `/${businessSlug}`
+                } else {
+                  countdown.textContent = `Te llevamos al menú en ${secondsLeft}s…`
+                }
+              }, 1000)
+            }
+          }
         }
       }
 
