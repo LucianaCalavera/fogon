@@ -18,11 +18,14 @@ if (!user) return Astro.redirect('/login')
 
 const { data: business } = await supabase.from('businesses').select('*').eq('owner_id', user.id).single()
 
-// ← Pago pendiente a Fogón (no el cobro del negocio a sus clientes)
 const ownerClabe = import.meta.env.FOGON_OWNER_CLABE ?? ''
 const ownerPhone = import.meta.env.FOGON_OWNER_PHONE ?? ''
 const ownerBankName = import.meta.env.FOGON_OWNER_BANK_NAME ?? ''
 if (!business) return Astro.redirect('/login')
+
+// ← DOMICILIO: si no hay valor guardado (negocios viejos antes de
+// esta columna), asumimos true para no quitarle la opción a nadie.
+const offersDelivery = business.offers_delivery !== false
 
 const { data: categories } = await supabase
   .from('categories').select('*, products(*)')
@@ -110,7 +113,6 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     .cat-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
     .cat-name{font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:2px}
 
-    /* ── Agregar categoría / producto ──────────────── */
     .add-product-btn{
       font-size:12px;background:none;color:var(--accent);border:1px solid var(--accent-border);
       border-radius:7px;padding:5px 11px;cursor:pointer;font-family:'Inter',sans-serif;
@@ -192,7 +194,6 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     }
     .delete-btn:hover{background:var(--danger-dim)}
 
-    /* Logo */
     .logo-label{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer}
     .logo-box{
       width:88px;height:88px;border-radius:14px;
@@ -214,7 +215,6 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     }
     .logo-label:hover .logo-edit-badge{opacity:1}
 
-    /* Cover drag */
     .cover-wrap{display:flex;flex-direction:column;gap:8px}
     .cover-dragger{
       width:100%;height:190px;border-radius:12px;
@@ -249,13 +249,11 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     .cover-actions-row{display:flex;gap:10px;align-items:center}
     .cover-change-label{font-size:12px;color:var(--text-3);cursor:pointer;text-decoration:underline}
 
-    /* Identidad del negocio */
     .identity-card{background:var(--bg-surface);border-radius:14px;border:1px solid var(--border);padding:24px;margin-bottom:32px}
     .identity-title{font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700;color:var(--text-1);margin-bottom:20px}
     .identity-grid{display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:start}
     @media(max-width:640px){.identity-grid{grid-template-columns:1fr}}
 
-    /* Logo upload */
     .logo-upload{
       width:88px;height:88px;border-radius:14px;
       background:var(--bg-deep);border:2px dashed var(--accent-border);
@@ -274,7 +272,6 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     }
     .logo-upload:hover .logo-overlay{opacity:1}
 
-    /* Cover upload */
     .cover-upload{
       width:100%;aspect-ratio:16/7;border-radius:12px;
       background:var(--bg-deep);border:2px dashed var(--accent-border);
@@ -293,7 +290,6 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     .cover-upload:hover .cover-overlay{opacity:1}
     .cover-overlay-text{font-size:14px;color:#FAF6F0;font-weight:500}
 
-    /* Horario y contacto */
     .contact-section{margin-top:24px;padding-top:24px;border-top:1px solid var(--border)}
     .contact-title{font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:700;color:var(--text-1);margin-bottom:16px}
     .contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}
@@ -306,7 +302,16 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     .field-input::placeholder{color:var(--text-3)}
     .save-contact-btn{margin-top:18px;background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border);border-radius:8px;padding:9px 18px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background 0.15s,color 0.15s}
 
-    /* Cobro por transferencia */
+    /* ← Toggle de domicilio: mismo patrón visual que el de
+       disponible/agotado en los productos, pero para el negocio. */
+    .delivery-toggle-row{
+      display:flex;align-items:center;justify-content:space-between;gap:14px;
+      background:var(--bg-deep);border:1px solid var(--border);border-radius:10px;
+      padding:12px 16px;margin-top:16px;
+    }
+    .delivery-toggle-text{font-size:14px;color:var(--text-1)}
+    .delivery-toggle-hint{font-size:12px;color:var(--text-3);margin-top:2px}
+
     .payment-hint{font-size:13px;color:var(--text-3);margin-bottom:16px;line-height:1.5}
     .location-search-row{display:flex;gap:10px;margin-bottom:14px}
     .location-search-row .field-input{flex:1}
@@ -373,12 +378,10 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
   </nav>
 
   <main class="main">
-    <!-- Identidad del negocio -->
     <div class="identity-card">
       <p class="identity-title">Identidad del negocio</p>
       <div class="identity-grid">
 
-        <!-- Logo (label nativo — sin JS para abrir) -->
         <label class="logo-label" for="logo-input">
           <div class="logo-box">
             {business.logo_url
@@ -391,7 +394,6 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
         </label>
         <input type="file" id="logo-input" accept="image/*" style="display:none" onchange="uploadLogo(this)"/>
 
-        <!-- Cover con drag para reposicionar -->
         <div class="cover-wrap">
           <div class="cover-dragger" id="cover-dragger">
             {business.cover_url
@@ -418,7 +420,6 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
 
       </div>
 
-      <!-- Horario y contacto -->
       <div class="contact-section">
         <p class="contact-title">Horario y contacto</p>
         <div class="contact-grid">
@@ -448,9 +449,19 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
           </div>
         </div>
         <button class="save-contact-btn" onclick="saveContact()">Guardar</button>
+
+        <!-- ← Toggle de servicio a domicilio -->
+        <div class="delivery-toggle-row">
+          <div>
+            <p class="delivery-toggle-text">🛵 Servicio a domicilio</p>
+            <p class="delivery-toggle-hint">Si lo apagas, tus clientes solo verán la opción de recoger en tienda.</p>
+          </div>
+          <div class="toggle-wrap" onclick={`toggleDelivery(${offersDelivery})`}>
+            <button class={`toggle-sw ${offersDelivery ? 'on' : 'off'}`} id="delivery-toggle-sw"></button>
+          </div>
+        </div>
       </div>
 
-      <!-- Ubicación -->
       <div class="contact-section">
         <p class="contact-title">Ubicación</p>
         <p class="payment-hint">Esto es lo que tus clientes ven en el mapa de tu tienda. Busca tu calle o haz clic directo en el mapa para marcar el punto exacto.</p>
@@ -472,7 +483,6 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
         <button class="save-contact-btn" onclick="saveLocation()">Guardar ubicación</button>
       </div>
 
-      <!-- QR para tu mesa -->
       <div class="contact-section">
         <p class="contact-title">QR para tu mesa</p>
         <p class="payment-hint">Imprímelo en tus mesas, en una calcomanía o en tu vitrina — tus clientes lo escanean y caen directo a tu tienda.</p>
@@ -483,7 +493,6 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
         </div>
       </div>
 
-      <!-- Cobro por transferencia -->
       <div class="contact-section">
         <p class="contact-title">Cobro por transferencia</p>
         <p class="payment-hint">Llena lo que ya tengas gratis de tu banco — el cliente lo verá al pagar. Esto nunca pasa por Fogón.</p>
@@ -542,7 +551,6 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
               class={`product-row ${!product.is_available ? 'out-of-stock' : product.stock !== null && product.stock <= (product.low_stock_alert ?? 5) ? 'low-stock' : ''}`}
               id={`row-${product.id}`}
             >
-              <!-- Foto -->
               <div class="prod-img-wrap" onclick={`triggerUpload('${product.id}')`}>
                 {product.image_url
                   ? <><img src={product.image_url} class="prod-img" alt={product.name}/><div class="img-overlay"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></div></>
@@ -622,10 +630,6 @@ const sb = createBrowserClient(
   import.meta.env.PUBLIC_SUPABASE_ANON_KEY
 )
 
-// ── Alerta de pedido nuevo (sonido + notificación) ──
-// Pedidos/Menú/Reportes son páginas completas separadas — si no
-// repetimos esta suscripción aquí también, la alerta solo suena
-// mientras estás parado en la pestaña de Pedidos.
 const menuAlertCfg = document.getElementById('menu-cfg')
 const orderAlertBid = menuAlertCfg.dataset.bid
 
@@ -692,7 +696,6 @@ function toast(msg, ok = true) {
   setTimeout(() => { el.style.display = 'none' }, ok ? 3000 : 7000)
 }
 
-// ── Crear categorías y productos ──────────────────
 window.toggleAddProduct = (catId) => {
   const form = document.getElementById(`add-form-${catId}`)
   if (!form) return
@@ -799,10 +802,6 @@ window.enableStock = async (id) => {
   window.location.reload()
 }
 
-// ── Borrar producto ───────────────────────────────
-// Usamos data-attributes en el botón (en vez de pasar el nombre por
-// el onclick) para no pelearnos con comillas dentro de nombres de
-// producto como "Café c/ leche".
 window.confirmDeleteProduct = (btn) => {
   const id = btn.dataset.id
   const name = btn.dataset.name
@@ -813,9 +812,6 @@ window.confirmDeleteProduct = (btn) => {
 async function deleteProduct(id) {
   const { error } = await sb.from('products').delete().eq('id', id)
   if (error) {
-    // Si el producto ya tiene pedidos asociados, el borrado puede
-    // fallar por la relación con esa tabla — se lo decimos a Lucía
-    // tal cual en vez de adivinarle.
     toast(`Error al borrar: ${error.message}`, false)
     return
   }
@@ -826,7 +822,6 @@ async function deleteProduct(id) {
 
 window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
 
-// ── Logo upload ───────────────────────────────────
 window.uploadLogo = async (input) => {
   const file = input.files?.[0]
   if (!file) return
@@ -847,7 +842,6 @@ window.uploadLogo = async (input) => {
   toast('¡Logo actualizado!')
 }
 
-// ── Cover upload ──────────────────────────────────
 window.uploadCover = async (input) => {
   const file = input.files?.[0]
   if (!file) return
@@ -861,7 +855,6 @@ window.uploadCover = async (input) => {
   const { data: { publicUrl } } = sb.storage.from('fogon-media').getPublicUrl(path)
   await sb.from('businesses').update({ cover_url: publicUrl }).eq('id', bid)
 
-  // Mostrar imagen en el dragger
   posX = 50; posY = 50
   const dragger = document.getElementById('cover-dragger')
   if (dragger) {
@@ -874,14 +867,12 @@ window.uploadCover = async (input) => {
     requestAnimationFrame(() => { requestAnimationFrame(initDrag) })
   }
 
-  // Mostrar botón "Cambiar foto" si no estaba
   const actionsRow = document.querySelector('.cover-actions-row')
   if (actionsRow) actionsRow.style.display = 'flex'
 
   toast('¡Foto del local actualizada!')
 }
 
-// ── Drag reposicionar ─────────────────────────────
 let posX = 50, posY = 50
 let isDragging = false
 let lastX = 0, lastY = 0
@@ -896,7 +887,7 @@ function initDrag() {
   if (!dragger || !img) return
 
   dragger.addEventListener('mousedown', (e) => {
-    if (e.target.tagName === 'BUTTON') return // no iniciar drag si click en botón
+    if (e.target.tagName === 'BUTTON') return
     isDragging = true
     lastX = e.clientX
     lastY = e.clientY
@@ -919,7 +910,6 @@ function initDrag() {
     if (isDragging) { isDragging = false; dragger.classList.remove('grabbing') }
   })
 
-  // Touch
   dragger.addEventListener('touchstart', (e) => {
     if (e.target.tagName === 'BUTTON') return
     isDragging = true
@@ -952,7 +942,6 @@ window.savePosition = async () => {
   toast('¡Posición guardada!')
 }
 
-// ── Horario y contacto ─────────────────────────────
 window.saveContact = async () => {
   const cfg = document.getElementById('menu-cfg')
   const bid = cfg.dataset.bid
@@ -973,7 +962,23 @@ window.saveContact = async () => {
   toast('¡Datos guardados!')
 }
 
-// ── Cobro por transferencia ─────────────────────────
+// ← Servicio a domicilio: mismo patrón que toggleAvail, pero
+// actualizando businesses.offers_delivery en vez de un producto.
+window.toggleDelivery = async (current) => {
+  const cfg = document.getElementById('menu-cfg')
+  const bid = cfg.dataset.bid
+  const newVal = !current
+  const { error } = await sb.from('businesses').update({ offers_delivery: newVal }).eq('id', bid)
+  if (error) { toast(`Error al guardar: ${error.message}`, false); return }
+
+  const btn = document.getElementById('delivery-toggle-sw')
+  if (btn) btn.className = `toggle-sw ${newVal ? 'on' : 'off'}`
+  const wrap = btn?.closest('.toggle-wrap')
+  if (wrap) wrap.setAttribute('onclick', `toggleDelivery(${newVal})`)
+
+  toast(newVal ? '¡Domicilio activado!' : 'Domicilio desactivado')
+}
+
 window.uploadCodiQr = async (input) => {
   const file = input.files?.[0]
   if (!file) return
@@ -1010,10 +1015,8 @@ window.savePaymentInfo = async () => {
   toast('¡Datos de cobro guardados!')
 }
 
-// Inicializar drag si ya hay cover cargado
 initDrag()
 
-// ── Ubicación ────────────────────────────────────────
 let locationMap = null
 let locationMarker = null
 
@@ -1046,7 +1049,6 @@ function initLocationMap() {
   const existingLat = parseFloat(cfg.dataset.lat)
   const existingLng = parseFloat(cfg.dataset.lng)
   const hasExisting = !isNaN(existingLat) && !isNaN(existingLng)
-  // Centro por default: Chihuahua, Chih. — si ya hay ubicación guardada, esa gana.
   const startLat = hasExisting ? existingLat : 28.6353
   const startLng = hasExisting ? existingLng : -106.0889
 
@@ -1098,7 +1100,6 @@ window.saveLocation = async () => {
 
 initLocationMap()
 
-// ── QR para la mesa ──────────────────────────────────
 let qrReady = false
 
 async function initQr() {
@@ -1110,9 +1111,6 @@ async function initQr() {
 
   const canvas = document.getElementById('qr-canvas')
   try {
-    // ← Si la librería de QR no cargó (bloqueador de anuncios, Shields
-    // de Brave, o sin internet), esto truena aquí en vez de dejar el
-    // canvas en blanco y que el botón descargue una imagen vacía.
     await QRCode.toCanvas(canvas, storeUrl, {
       width: 220,
       margin: 2,

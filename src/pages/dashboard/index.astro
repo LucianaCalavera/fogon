@@ -23,14 +23,9 @@ const { data: business } = await supabase
   .from('businesses').select('*').eq('owner_id', user.id).single()
 if (!business) return Astro.redirect('/login')
 
-// Estado real combinando horario configurado + Modo Pausa manual.
-// 'open' | 'open-no-schedule' | 'closed-schedule' | 'closed-manual'
 const businessStatus = getBusinessStatus(business.open_time, business.close_time, business.is_open)
 const isOpenNow = businessStatus === 'open' || businessStatus === 'open-no-schedule'
 
-// ← Pago pendiente a Fogón (no confundir con el cobro del negocio
-// a SUS clientes). Estos datos son tuyos, Lucía — van en variables
-// de entorno porque no son del negocio, son de Fogón.
 const ownerClabe = import.meta.env.FOGON_OWNER_CLABE ?? ''
 const ownerPhone = import.meta.env.FOGON_OWNER_PHONE ?? ''
 const ownerBankName = import.meta.env.FOGON_OWNER_BANK_NAME ?? ''
@@ -82,7 +77,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     }
     body { background: var(--bg-body); color: var(--text-1); font-family: 'Inter', sans-serif; min-height: 100vh; font-size: 16px; }
 
-    /* Brasas */
     .embers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
     .ember {
       position: absolute; border-radius: 50%;
@@ -97,7 +91,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
       100% { opacity: 0; transform: translateY(-80vh) translateX(var(--drift)) scale(1.2); }
     }
 
-    /* Topbar */
     .topbar {
       background: var(--bg-deep); border-bottom: 1px solid var(--accent-border);
       padding: 0 24px; display: flex; align-items: center;
@@ -134,7 +127,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     }
     .logout-btn:hover { color: var(--text-2); }
 
-    /* Modo Pausa Rápido */
     .pending-payment-banner{
       background:var(--danger-dim);border-bottom:1px solid var(--danger-border);
       padding:16px 24px;
@@ -197,7 +189,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     }
     .resume-btn:hover { opacity: 0.9; }
 
-    /* Quick Pause Buttons */
     .quick-pause {
       padding: 16px 24px 0;
       max-width: 960px;
@@ -228,7 +219,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     .pause-btn:hover { background: rgba(248, 113, 113, 0.15); }
     .pause-btn-danger { background: rgba(248, 113, 113, 0.12); }
 
-    /* Nav */
     .dash-nav {
       background: var(--bg-deep); border-bottom: 1px solid var(--border);
       padding: 0 24px; display: flex; gap: 4px;
@@ -241,7 +231,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     }
     .dash-nav a.active, .dash-nav a:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
-    /* Stats */
     .stats-grid {
       display: grid; grid-template-columns: repeat(3,1fr);
       gap: 12px; padding: 24px; max-width: 960px; margin: 0 auto;
@@ -260,7 +249,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
       font-size: 36px; font-weight: 700; color: var(--accent);
     }
 
-    /* Pedidos */
     .orders-section { padding: 0 24px 48px; max-width: 960px; margin: 0 auto; position: relative; z-index: 1; }
     .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
     .section-title { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 700; color: var(--text-1); }
@@ -270,7 +258,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
 
     .orders-list { display: flex; flex-direction: column; gap: 10px; }
 
-    /* Card pedido */
     .order-card {
       background: var(--bg-surface); border-radius: 14px;
       overflow: hidden; border: 1px solid var(--border);
@@ -305,12 +292,10 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     .action-btn:hover { opacity: 0.8; }
     .action-btn.sm { padding: 8px 14px; }
 
-    /* Vacío */
     .empty-orders { text-align: center; padding: 60px 24px; }
     .empty-icon-dash { font-size: 42px; margin-bottom: 14px; }
     .empty-dash-title { font-family: 'Cormorant Garamond', serif; font-size: 20px; color: var(--text-3); }
 
-    /* Notificaciones */
     .notif-btn {
       display: inline-flex;
       align-items: center;
@@ -329,10 +314,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
       border-color: var(--accent-border);
       color: var(--text-2);
     }
-
-    /* ═══════════════════════════════════════════════════════ */
-    /* ANIMACIONES INANNA */
-    /* ═══════════════════════════════════════════════════════ */
 
     @keyframes slideUpFade {
       from {
@@ -407,7 +388,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
       vertical-align: middle;
     }
 
-    /* ── Responsive (mobile) ──────────────────────── */
     @media (max-width: 640px) {
       .topbar { padding: 0 14px; }
       .topbar-left { gap: 10px; }
@@ -503,7 +483,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     </div>
   )}
 
-  <!-- Modo Pausa Rápido -->
   <div class="pause-bar" id="pause-bar">
     <div class="pause-bar-inner">
       <div class="pause-bar-left">
@@ -525,7 +504,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     </div>
   </div>
 
-  <!-- Botones de pausa rápida -->
   <div class="quick-pause" id="quick-pause" style={business.is_open ? '' : 'display:none;'}>
     <div class="quick-pause-row">
       <button onclick="pauseOrders(15)" class="pause-btn btn-ripple">
@@ -631,6 +609,12 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
               {order.payment_method === 'transfer' && <span style="color:#B04030;font-weight:600"> · 🏦 Transferencia</span>}
               {order.notes && ` · 📝 ${order.notes}`}
             </p>
+            {order.order_type === 'delivery' && order.delivery_address && (
+              <p class="order-info" style="margin-top:-6px;color:var(--text-1)">
+                📍 {order.delivery_address.address}
+                {order.delivery_address.references && ` — ${order.delivery_address.references}`}
+              </p>
+            )}
             <div class="order-actions" id={`actions-${order.id}`}>
               {order.status === 'pending' && (<>
                 <button class="action-btn btn-ripple" onclick={`updateStatus('${order.id}','confirmed')`}
@@ -697,7 +681,7 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
 
   const config = document.getElementById('dash-config')
   const businessId = config.dataset.businessId
-  let isOpen = config.dataset.isOpen === 'true' // bandera manual (Modo Pausa)
+  let isOpen = config.dataset.isOpen === 'true'
   const openTime = config.dataset.openTime || null
   const closeTime = config.dataset.closeTime || null
   let audioCtx = null
@@ -705,9 +689,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)()
   }, { once: true })
 
-  // ── Badge Abierto / Cerrado por horario / Pausado ─────────
-  // Única función que decide qué se ve en el botón. Así nunca
-  // se desincroniza el texto del color ni del horario real.
   function renderStatusBadge() {
     const btn = document.getElementById('toggle-open')
     if (!btn) return
@@ -734,8 +715,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
   }
 
   renderStatusBadge()
-  // Recalcula cada minuto: si el negocio cruza su hora de cierre
-  // mientras tienes el dashboard abierto, el badge se actualiza solo.
   setInterval(renderStatusBadge, 60000)
 
 
@@ -828,6 +807,10 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
           ${order.payment_method === 'transfer' ? ' · <span style="color:#B04030;font-weight:600">🏦 Transferencia</span>' : ''}
           ${order.notes ? ' · 📝 ' + order.notes : ''}
         </p>
+        ${order.order_type === 'delivery' && order.delivery_address ? `
+        <p class="order-info" style="margin-top:-6px;color:var(--text-1)">
+          📍 ${order.delivery_address.address}${order.delivery_address.references ? ' — ' + order.delivery_address.references : ''}
+        </p>` : ''}
         <div class="order-actions" id="actions-${order.id}">
           <button class="action-btn btn-ripple" onclick="updateStatus('${order.id}','confirmed')" style="background:rgba(176,64,48,0.1);color:#B04030;border:1px solid rgba(176,64,48,0.28)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
@@ -847,11 +830,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     list.insertAdjacentElement('afterbegin', card)
   }
 
-  // ← Antes de suscribirnos, hay que asegurarnos de que Realtime ya
-  // tenga tu token de sesión — si te conectas antes de que cargue,
-  // Realtime te trata como anónimo y la política de RLS (que exige
-  // auth.uid()) nunca deja pasar los eventos. Por eso el refresh
-  // manual sí jalaba (esa carga sí espera al login completo).
   async function startOrdersRealtime() {
     const { data: { session } } = await sb.auth.getSession()
     if (session) sb.realtime.setAuth(session.access_token)
@@ -867,8 +845,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
   }
   startOrdersRealtime()
 
-  // Si la sesión se refresca mientras tienes el dashboard abierto
-  // (turnos largos), reautenticamos Realtime con el token nuevo.
   sb.auth.onAuthStateChange((_event, session) => {
     if (session) sb.realtime.setAuth(session.access_token)
   })
@@ -933,9 +909,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     }
   }
 
-  // ═══════════════════════════════════════════════════════
-  // MODO PAUSA RÁPIDO
-  // ═══════════════════════════════════════════════════════
   let pauseEndTime = null
   let pauseTimerInterval = null
 
