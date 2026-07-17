@@ -925,11 +925,12 @@ window.handleSubmit = async () => {
     })
     if (oErr) throw oErr
     
-    await sb.from('order_items').insert(cart.map(i => ({
+    const { error: iErr } = await sb.from('order_items').insert(cart.map(i => ({
       order_id: orderId, product_id: i.id,
       name_snap: i.name, price_snap: i.price,
       quantity: i.qty, subtotal: i.price * i.qty
     })))
+    if (iErr) throw iErr
     
     try {
       localStorage.setItem(`fogon_last_order_${businessId}`, JSON.stringify({ orderId, createdAt: Date.now() }))

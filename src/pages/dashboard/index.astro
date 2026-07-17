@@ -31,7 +31,7 @@ const ownerPhone = import.meta.env.FOGON_OWNER_PHONE ?? ''
 const ownerBankName = import.meta.env.FOGON_OWNER_BANK_NAME ?? ''
 
 const { data: orders } = await supabase
-  .from('orders').select('*').eq('business_id', business.id)
+  .from('orders').select('*, order_items(*)').eq('business_id', business.id)
   .order('created_at', { ascending: false }).limit(50)
 
 const today = new Date().toDateString()
@@ -279,6 +279,16 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     .order-body { padding: 10px 18px 14px; }
     .order-name { font-size: 16px; font-weight: 600; color: var(--text-1); margin-bottom: 4px; }
     .order-info { font-size: 14px; color: var(--text-2); margin-bottom: 10px; }
+    .order-items-list {
+      list-style: none; margin: 2px 0 10px; padding: 8px 10px;
+      background: rgba(250,246,240,0.03); border: 1px solid var(--border);
+      border-radius: 8px; display: flex; flex-direction: column; gap: 5px;
+    }
+    .order-item-row { display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
+    .order-item-qty { color: var(--accent); font-weight: 700; flex-shrink: 0; min-width: 24px; }
+    .order-item-name { color: var(--text-1); flex: 1; }
+    .order-item-subtotal { color: var(--text-3); font-size: 13px; flex-shrink: 0; }
+    .order-notes { font-size: 13px; color: var(--text-2); margin: -4px 0 10px; font-style: italic; }
 
     .order-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .action-btn {
@@ -607,8 +617,21 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
                 </span>
               }
               {order.payment_method === 'transfer' && <span style="color:#B04030;font-weight:600"> · 🏦 Transferencia</span>}
-              {order.notes && ` · 📝 ${order.notes}`}
             </p>
+            {order.order_items && order.order_items.length > 0 && (
+              <ul class="order-items-list">
+                {order.order_items.map(item => (
+                  <li class="order-item-row">
+                    <span class="order-item-qty">{item.quantity}×</span>
+                    <span class="order-item-name">{item.name_snap}</span>
+                    <span class="order-item-subtotal">{formatPrice(item.subtotal)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {order.notes && (
+              <p class="order-notes">📝 {order.notes}</p>
+            )}
             {order.order_type === 'delivery' && order.delivery_address && (
               <p class="order-info" style="margin-top:-6px;color:var(--text-1)">
                 📍 {order.delivery_address.address}
@@ -777,7 +800,13 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
 
   window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
 
-  function addOrderCard(order) {
+  function escapeHtml(str) {
+    const div = document.createElement('div')
+    div.textContent = str ?? ''
+    return div.innerHTML
+  }
+
+  async function addOrderCard(order) {
     const list = document.getElementById('orders-list')
     const card = document.createElement('div')
     card.id = `order-${order.id}`
@@ -786,6 +815,16 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     if (order.status === 'pending') {
       card.classList.add('order-card-pending')
     }
+
+    const { data: items } = await sb.from('order_items').select('*').eq('order_id', order.id)
+    const itemsHtml = (items && items.length > 0)
+      ? `<ul class="order-items-list">${items.map(item => `
+          <li class="order-item-row">
+            <span class="order-item-qty">${item.quantity}×</span>
+            <span class="order-item-name">${escapeHtml(item.name_snap)}</span>
+            <span class="order-item-subtotal">${formatMXN(item.subtotal)}</span>
+          </li>`).join('')}</ul>`
+      : ''
     
     card.style.borderLeftColor = '#B04030'
     card.innerHTML = `
@@ -805,8 +844,9 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
             ? '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> Recoger</span>' 
             : '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg> Domicilio</span>'}
           ${order.payment_method === 'transfer' ? ' · <span style="color:#B04030;font-weight:600">🏦 Transferencia</span>' : ''}
-          ${order.notes ? ' · 📝 ' + order.notes : ''}
         </p>
+        ${itemsHtml}
+        ${order.notes ? `<p class="order-notes">📝 ${escapeHtml(order.notes)}</p>` : ''}
         ${order.order_type === 'delivery' && order.delivery_address ? `
         <p class="order-info" style="margin-top:-6px;color:var(--text-1)">
           📍 ${order.delivery_address.address}${order.delivery_address.references ? ' — ' + order.delivery_address.references : ''}
@@ -836,8 +876,8 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
 
     sb.channel('orders-realtime')
       .on('postgres_changes', { event:'INSERT', schema:'public', table:'orders', filter:`business_id=eq.${businessId}` },
-        payload => {
-          addOrderCard(payload.new)
+        async payload => {
+          await addOrderCard(payload.new)
           playOrderSound()
           sendOrderNotification(payload.new)
         })
