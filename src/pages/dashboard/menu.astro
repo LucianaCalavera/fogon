@@ -120,6 +120,15 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     }
     .add-product-btn:hover{background:var(--accent-dim)}
 
+    .cat-header-actions{display:flex;align-items:center;gap:8px}
+    .delete-cat-btn{
+      width:28px;height:28px;border-radius:7px;flex-shrink:0;
+      background:none;border:1px solid var(--danger-border);color:var(--danger);
+      cursor:pointer;display:flex;align-items:center;justify-content:center;
+      transition:background 0.15s;
+    }
+    .delete-cat-btn:hover{background:var(--danger-dim)}
+
     .add-product-form{
       display:none;gap:10px;margin-top:10px;padding:14px;
       background:var(--bg-deep);border:1px dashed var(--accent-border);border-radius:10px;
@@ -543,7 +552,12 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
       <div class="cat-section">
         <div class="cat-header">
           <span class="cat-name">{cat.name}</span>
-          <button class="add-product-btn" onclick={`toggleAddProduct('${cat.id}')`}>+ Producto</button>
+          <div class="cat-header-actions">
+            <button class="add-product-btn" onclick={`toggleAddProduct('${cat.id}')`}>+ Producto</button>
+            <button class="delete-cat-btn" data-id={cat.id} data-name={cat.name} data-count={cat.products?.length ?? 0} onclick="confirmDeleteCategory(this)" aria-label={`Borrar categoría ${cat.name}`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m5 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </button>
+          </div>
         </div>
         <div class="products-table">
           {cat.products.map(product => (
@@ -818,6 +832,35 @@ async function deleteProduct(id) {
   const row = document.getElementById(`row-${id}`)
   if (row) row.remove()
   toast('Producto borrado')
+}
+
+window.confirmDeleteCategory = (btn) => {
+  const id = btn.dataset.id
+  const name = btn.dataset.name
+  const count = parseInt(btn.dataset.count || '0', 10)
+  const msg = count > 0
+    ? `¿Borrar la categoría "${name}" y sus ${count} producto${count === 1 ? '' : 's'}? Esta acción no se puede deshacer.`
+    : `¿Borrar la categoría "${name}"? Esta acción no se puede deshacer.`
+  if (!confirm(msg)) return
+  deleteCategory(id, btn)
+}
+
+async function deleteCategory(id, btn) {
+  btn.disabled = true
+  const { error: prodErr } = await sb.from('products').delete().eq('category_id', id)
+  if (prodErr) {
+    toast(`Error al borrar productos de la categoría: ${prodErr.message}`, false)
+    btn.disabled = false
+    return
+  }
+  const { error: catErr } = await sb.from('categories').delete().eq('id', id)
+  if (catErr) {
+    toast(`Error al borrar la categoría: ${catErr.message}`, false)
+    btn.disabled = false
+    return
+  }
+  toast('Categoría borrada')
+  window.location.reload()
 }
 
 window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
