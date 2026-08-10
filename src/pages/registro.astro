@@ -1,5 +1,6 @@
 ---
 export const prerender = false
+import '../styles/global.css'
 ---
 
 <!doctype html>
@@ -13,16 +14,16 @@ export const prerender = false
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --bg-deep:#050204;
-      --bg-body:#0A0608;
-      --bg-surface:#140A10;
-      --text-1:#FAF6F0;
-      --text-2:#C4A882;
-      --text-3:#7A5840;
-      --accent:#B04030;
-      --accent-dim:rgba(176,64,48,0.12);
-      --accent-border:rgba(176,64,48,0.28);
-      --border:rgba(250,246,240,0.07);
+      --bg-deep:var(--color-fog-bg);
+      --bg-body:var(--color-fog-bg);
+      --bg-surface:var(--color-fog-panel);
+      --text-1:var(--color-fog-text);
+      --text-2:var(--color-fog-muted);
+      --text-3:var(--color-fog-muted);
+      --accent:var(--color-fog-brasa);
+      --accent-dim:rgba(199,85,31,0.12);
+      --accent-border:rgba(199,85,31,0.28);
+      --border:var(--color-fog-border);
       --danger:#f87171;
       --danger-dim:rgba(248,113,113,0.1);
       --danger-border:rgba(248,113,113,0.25);
@@ -53,7 +54,7 @@ export const prerender = false
     .field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
     .field-label{font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px}
     .field-input{
-      background:var(--bg-deep);color:var(--text-1);border:1px solid var(--border);
+      background:var(--color-fog-card);color:var(--text-1);border:1px solid var(--border);
       border-radius:8px;padding:11px 13px;font-size:15px;outline:none;font-family:'Inter',sans-serif;
       transition:border-color 0.15s;width:100%;
     }
@@ -67,7 +68,7 @@ export const prerender = false
     .terms-check a{color:var(--accent)}
 
     .submit-btn{
-      width:100%;margin-top:8px;background:var(--accent);color:var(--bg-deep);
+      width:100%;margin-top:8px;background:var(--accent);color:#FFFFFF;
       border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;
       cursor:pointer;font-family:'Inter',sans-serif;transition:opacity 0.15s;
     }

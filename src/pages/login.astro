@@ -14,16 +14,16 @@ import '../styles/global.css'
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --bg-body:       #0A0608;
-      --bg-surface:    #140A10;
-      --bg-input:      #1C1018;
-      --text-1:        #FAF6F0;
-      --text-2:        #C4A882;
-      --text-3:        #7A5840;
-      --accent:        #B04030;
-      --accent-dim:    rgba(176,64,48,0.12);
-      --accent-border: rgba(176,64,48,0.28);
-      --border:        rgba(250,246,240,0.08);
+      --bg-body:       var(--color-fog-bg);
+      --bg-surface:    var(--color-fog-panel);
+      --bg-input:      var(--color-fog-card);
+      --text-1:        var(--color-fog-text);
+      --text-2:        var(--color-fog-muted);
+      --text-3:        var(--color-fog-muted);
+      --accent:        var(--color-fog-brasa);
+      --accent-dim:    rgba(199,85,31,0.12);
+      --accent-border: rgba(199,85,31,0.28);
+      --border:        var(--color-fog-border);
     }
     body{
       min-height:100vh;background:var(--bg-body);color:var(--text-1);
@@ -55,7 +55,7 @@ import '../styles/global.css'
       font-family:'Inter',sans-serif;transition:border-color 0.15s;
     }
     .field input:focus{border-color:var(--accent-border)}
-    .field input::placeholder{color:rgba(250,246,240,0.2)}
+    .field input::placeholder{color:rgba(28,18,8,0.35)}
 
     .error-msg{display:none;color:#f87171;font-size:13px;margin:0}
 

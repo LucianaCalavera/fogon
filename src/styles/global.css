@@ -1,69 +1,78 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,500;1,600&family=Inter:wght@300;400;500;600;700&display=swap');
 
 @import "tailwindcss";
 
 @theme {
 
-
-  --font-display: "Playfair Display", serif;
+  --font-display: "Cormorant Garamond", serif;
   --font-body: "Inter", sans-serif;
 
-  /* Paleta Fogón — negros cálidos + ámbar fuego */
-  --color-fog-950: #0E0904;
-  --color-fog-900: #161009;
-  --color-fog-800: #221608;
-  --color-fog-700: #2E1E0A;
-  --color-fog-600: #3D280E;
-  --color-fog-amber: #F59E0B;
-  --color-fog-ember: #DC6B19;
-  --color-fog-cream: #F5EDD6;
-  --color-fog-muted: #8B7355;
-  --color-fog-subtle: #4A3520;
+  --color-fog-brasa: #C7551F;
+  --color-fog-brasa-dark: #A8441A;
+
+  /* Superficie cliente — cálida */
+  --color-fog-bg: #FAF6EE;
+  --color-fog-panel: #EDE3D0;
+  --color-fog-card: #FFFFFF;
+  --color-fog-text: #1C1208;
+  --color-fog-muted: #8A7A62;
+  --color-fog-border: #E8DDC8;
+
+  /* Superficie dashboard — limpia */
+  --color-fog-dash-bg: #FFFFFF;
+  --color-fog-dash-panel: #F5F5F5;
+  --color-fog-dash-text: #111111;
+  --color-fog-dash-muted: #8A8A8A;
+  --color-fog-dash-border: #E5E5E5;
+
+  --color-fog-950: #1C1208;
+  --color-fog-900: #241A0D;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html {
-  background-color: #161009;
-  color: #F5EDD6;
+  background-color: var(--color-fog-bg);
+  color: var(--color-fog-text);
   font-family: "Inter", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbar cálida */
-::-webkit-scrollbar {
-  width: 4px;
-}
-::-webkit-scrollbar-track {
-  background: #161009;
-}
-::-webkit-scrollbar-thumb {
-  background: #3D280E;
-  border-radius: 2px;
+[data-surface="dashboard"] {
+  --color-fog-bg: var(--color-fog-dash-bg);
+  --color-fog-panel: var(--color-fog-dash-panel);
+  --color-fog-text: var(--color-fog-dash-text);
+  --color-fog-muted: var(--color-fog-dash-muted);
+  --color-fog-border: var(--color-fog-dash-border);
+  background-color: var(--color-fog-bg);
+  color: var(--color-fog-text);
 }
 
-/* Animaciones */
-@keyframes slide-up {
-  from { transform: translateY(100%); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-fog-border); border-radius: 2px; }
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
+@keyframes slide-up { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.animate-slide-up { animation: slide-up 0.3s ease-out; }
+.animate-fade-in { animation: fade-in 0.2s ease-out; }
 
-.animate-slide-up  { animation: slide-up 0.3s ease-out; }
-.animate-fade-in   { animation: fade-in 0.2s ease-out; }
-
-/* Firma de Fogón — brasa activa en hover */
 .product-card {
+  background-color: var(--color-fog-card, #FFFFFF);
+  border: 1px solid var(--color-fog-border);
   border-bottom: 2px solid transparent;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .product-card:hover {
-  border-bottom-color: #F59E0B;
-  background-color: #221608;
+  border-bottom-color: var(--color-fog-brasa);
+  box-shadow: 0 4px 16px -4px rgba(199, 85, 31, 0.18);
 }
+
+.btn-brasa {
+  background-color: var(--color-fog-brasa);
+  color: #FAF6EE;
+  font-weight: 700;
+  border-radius: 0.625rem;
+  transition: background-color 0.15s ease;
+}
+.btn-brasa:hover { background-color: var(--color-fog-brasa-dark); }

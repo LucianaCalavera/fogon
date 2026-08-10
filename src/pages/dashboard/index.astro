@@ -1,7 +1,12 @@
 ---
 export const prerender = false
+import '../../styles/global.css'
 import { createServerClient, parseCookieHeader } from '@supabase/ssr'
 import { getBusinessStatus } from '../../lib/schedule'
+import Sidebar from '../../components/dashboard/Sidebar.astro'
+import EtaChip from '../../components/ui/EtaChip.astro'
+import { DEFAULT_PREP_MINUTES } from '../../lib/eta'
+import { statusLabel, statusColor, statusBg, bucketOf } from '../../lib/orderStatus'
 
 const supabase = createServerClient(
   import.meta.env.PUBLIC_SUPABASE_URL,
@@ -23,9 +28,6 @@ const { data: business } = await supabase
   .from('businesses').select('*').eq('owner_id', user.id).single()
 if (!business) return Astro.redirect('/login')
 
-const businessStatus = getBusinessStatus(business.open_time, business.close_time, business.is_open)
-const isOpenNow = businessStatus === 'open' || businessStatus === 'open-no-schedule'
-
 const ownerClabe = import.meta.env.FOGON_OWNER_CLABE ?? ''
 const ownerPhone = import.meta.env.FOGON_OWNER_PHONE ?? ''
 const ownerBankName = import.meta.env.FOGON_OWNER_BANK_NAME ?? ''
@@ -34,18 +36,39 @@ const { data: orders } = await supabase
   .from('orders').select('*, order_items(*)').eq('business_id', business.id)
   .order('created_at', { ascending: false }).limit(50)
 
+const allOrders = orders ?? []
+
 const today = new Date().toDateString()
-const todayOrders  = (orders ?? []).filter(o => new Date(o.created_at).toDateString() === today)
-const pendingOrders = (orders ?? []).filter(o => o.status === 'pending')
-const todaySales   = todayOrders.reduce((s, o) => s + Number(o.total), 0)
+const todayOrders = allOrders.filter(o => new Date(o.created_at).toDateString() === today)
+const todaySales = todayOrders.reduce((s, o) => s + Number(o.total), 0)
 
-const statusLabel = { pending:'Pendiente', confirmed:'Confirmado', ready:'Listo', delivered:'Entregado', cancelled:'Cancelado' }
-const statusColor = { pending:'#B04030', confirmed:'#60a5fa', ready:'#4ade80', delivered:'#6B7280', cancelled:'#f87171' }
-const statusBg    = { pending:'rgba(176,64,48,0.12)', confirmed:'rgba(96,165,250,0.1)', ready:'rgba(74,222,128,0.1)', delivered:'rgba(107,114,128,0.1)', cancelled:'rgba(248,113,113,0.1)' }
+const pendingOrders = allOrders.filter(o => o.status === 'pending')
+const confirmedOrders = allOrders.filter(o => o.status === 'confirmed')
+const readyOrders = allOrders.filter(o => o.status === 'ready')
+const doneOrders = allOrders.filter(o => o.status === 'delivered' || o.status === 'cancelled')
+const activeOrdersCount = pendingOrders.length + confirmedOrders.length + readyOrders.length
 
-const formatPrice = (n) => new Intl.NumberFormat('es-MX', { style:'currency', currency:'MXN' }).format(n)
-const formatTime  = (ts) => new Date(ts).toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' })
-const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase()
+// ← Se manda aparte (no dentro del objeto `order` que ya viaja en el
+// HTML de cada tarjeta) porque el cliente lo necesita como dato puro
+// para inicializar el mapa Leaflet, no para renderizarlo con Astro.
+const routeGeometryByOrder = Object.fromEntries(
+  allOrders.filter(o => o.eta_route_geometry).map(o => [o.id, o.eta_route_geometry])
+)
+
+const formatPrice = (n) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n)
+const formatTime = (ts) => new Date(ts).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+
+// ← El dashboard no pide geolocalización (quien mira esta pantalla es
+// el negocio, no el cliente) — el ETA real de ambos tipos de pedido se
+// calcula del lado del cliente (checkout para Domicilio, /pedido/[id]
+// para Recoger) y queda guardado en el pedido. Si no hay uno guardado
+// todavía, cae al tiempo de preparación.
+const orderEta = (order) => order.eta_minutes != null
+  ? { minutes: order.eta_minutes, km: order.eta_km }
+  : { minutes: DEFAULT_PREP_MINUTES }
+const now = new Date()
+const dateLabel = now.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 ---
 
 <!doctype html>
@@ -59,643 +82,208 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
   <style is:global>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg-deep:        #050204;
-      --bg-body:        #0A0608;
-      --bg-surface:     #140A10;
-      --bg-hover:       #1C1018;
-      --text-1:         #FAF6F0;
-      --text-2:         #C4A882;
-      --text-3:         #7A5840;
-      --accent:         #B04030;
-      --accent-dim:     rgba(176,64,48,0.12);
-      --accent-border:  rgba(176,64,48,0.28);
-      --border:         rgba(250,246,240,0.07);
-      --danger:         #f87171;
-      --danger-dim:     rgba(248,113,113,0.1);
-      --danger-border:  rgba(248,113,113,0.25);
-      --success:        #4ade80;
+      --accent: var(--color-fog-brasa);
+      --accent-dim: rgba(199,85,31,0.1);
+      --accent-border: rgba(199,85,31,0.25);
+      --border: var(--color-fog-dash-border);
+      --danger: #f87171;
+      --danger-dim: rgba(248,113,113,0.1);
+      --danger-border: rgba(248,113,113,0.25);
     }
-    body { background: var(--bg-body); color: var(--text-1); font-family: 'Inter', sans-serif; min-height: 100vh; font-size: 16px; }
+    body { background: var(--color-fog-dash-bg); color: var(--color-fog-dash-text); font-family: 'Inter', sans-serif; }
 
-    .embers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
-    .ember {
-      position: absolute; border-radius: 50%;
-      background: var(--accent); opacity: 0; bottom: -5px;
-      box-shadow: 0 0 6px 2px rgba(176,64,48,0.4);
-      animation: ember-rise linear infinite;
-    }
-    @keyframes ember-rise {
-      0%   { opacity: 0; transform: translateY(0) translateX(0) scale(0.5); }
-      10%  { opacity: 0.7; }
-      70%  { opacity: 0.45; }
-      100% { opacity: 0; transform: translateY(-80vh) translateX(var(--drift)) scale(1.2); }
-    }
+    .dash-layout { display: flex; min-height: 100vh; }
+    @media (max-width: 900px) { .dash-layout { flex-direction: column; } }
+    .dash-content { flex: 1; min-width: 0; padding: 28px 32px 48px; }
+    @media (max-width: 640px) { .dash-content { padding: 20px 16px 32px; } }
 
-    .topbar {
-      background: var(--bg-deep); border-bottom: 1px solid var(--accent-border);
-      padding: 0 24px; display: flex; align-items: center;
-      justify-content: space-between; height: 64px;
-      position: sticky; top: 0; z-index: 10;
-    }
-    .topbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
-    .logo-sm {
-      width: 38px; height: 38px; border-radius: 10px;
-      background: var(--accent-dim); border: 1px solid var(--accent-border);
-      display: flex; align-items: center; justify-content: center;
-      font-family: 'Cormorant Garamond', serif; font-size: 15px;
-      font-weight: 700; color: var(--accent); overflow: hidden;
-      flex-shrink: 0;
-    }
-    .logo-sm img { width: 100%; height: 100%; object-fit: cover; }
-    .biz-info { min-width: 0; overflow: hidden; }
-    .biz-name { font-family: 'Cormorant Garamond', serif; font-size: 19px; font-weight: 700; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .biz-sub  { font-size: 12px; color: var(--text-3); text-transform: uppercase; letter-spacing: 1.2px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .topbar-right { display: flex; align-items: center; gap: 12px; }
-    .open-toggle {
-      padding: 6px 14px; border-radius: 999px; border: none;
-      cursor: pointer; font-size: 13px; font-weight: 700;
-      font-family: 'Inter', sans-serif;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .topbar-link { font-size: 13px; color: var(--text-3); text-decoration: none; font-weight: 500; }
-    .topbar-link:hover { color: var(--text-2); }
-    .logout-btn {
-      background: none; border: none; color: var(--text-3);
-      cursor: pointer; font-size: 13px; font-family: 'Inter', sans-serif;
-    }
-    .logout-btn:hover { color: var(--text-2); }
+    .pending-payment-banner { background: var(--danger-dim); border: 1px solid var(--danger-border); border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; }
+    .pending-title { font-size: 14px; font-weight: 700; color: #c0392b; margin-bottom: 6px; }
+    .pending-text { font-size: 13px; color: var(--color-fog-dash-muted); line-height: 1.6; }
+    .pending-text a { color: var(--accent); text-decoration: underline; }
+    .pending-pay-info { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
+    .pending-pay-info strong { color: var(--color-fog-dash-muted); margin-right: 4px; }
 
-    .pending-payment-banner{
-      background:var(--danger-dim);border-bottom:1px solid var(--danger-border);
-      padding:16px 24px;
-    }
-    .pending-title{font-size:14px;font-weight:700;color:var(--danger);font-family:'Inter',sans-serif;max-width:960px;margin:0 auto 6px}
-    .pending-text{font-size:13px;color:var(--text-2);font-family:'Inter',sans-serif;max-width:960px;margin:0 auto;line-height:1.6}
-    .pending-text a{color:var(--accent);text-decoration:underline}
-    .pending-pay-info{
-      display:flex;gap:20px;flex-wrap:wrap;max-width:960px;margin:10px auto 0;
-      font-size:13px;color:var(--text-1);font-family:'Inter',sans-serif;
-    }
-    .pending-pay-info strong{color:var(--text-3);font-weight:600;margin-right:4px}
+    .dc-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+    .dc-title { font-family: 'Cormorant Garamond', serif; font-size: 34px; font-weight: 700; }
+    .dc-date { font-size: 14px; color: var(--color-fog-dash-muted); margin-top: 4px; text-transform: capitalize; }
+    .dc-chips { display: flex; gap: 10px; }
+    .dc-chip { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px 18px; text-align: center; min-width: 80px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    .dc-chip-num { font-family: 'Cormorant Garamond', serif; font-size: 26px; font-weight: 700; color: var(--accent); }
+    .dc-chip-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--color-fog-dash-muted); text-transform: uppercase; margin-top: 2px; }
 
-    .pause-bar {
-      display: none;
-      background: var(--danger-dim);
-      border-bottom: 1px solid var(--danger-border);
-      padding: 12px 24px;
-      position: sticky;
-      top: 64px;
-      z-index: 9;
-    }
-    .pause-bar-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      max-width: 960px;
-      margin: 0 auto;
-    }
-    .pause-bar-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .pause-bar-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--danger);
-      font-family: 'Inter', sans-serif;
-    }
-    .pause-bar-timer {
-      font-size: 12px;
-      color: var(--text-3);
-      font-family: 'Inter', sans-serif;
-    }
-    .resume-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--accent);
-      color: var(--cream);
-      border: none;
-      border-radius: 8px;
-      padding: 8px 16px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: 'Inter', sans-serif;
-      transition: opacity 0.15s;
-    }
-    .resume-btn:hover { opacity: 0.9; }
+    .dc-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin-bottom: 22px; overflow-x: auto; }
+    .dc-tab { background: none; border: none; padding: 10px 2px 12px; font-size: 15px; font-weight: 500; color: var(--color-fog-dash-muted); border-bottom: 2px solid transparent; cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+    .dc-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .dc-tab-count { background: rgba(0,0,0,0.06); color: inherit; font-size: 11px; padding: 1px 7px; border-radius: 999px; }
+    .dc-tab.active .dc-tab-count { background: var(--accent-dim); color: var(--accent); }
 
-    .quick-pause {
-      padding: 16px 24px 0;
-      max-width: 960px;
-      margin: 0 auto;
-      position: relative;
-      z-index: 1;
-    }
-    .quick-pause-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .pause-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(248, 113, 113, 0.08);
-      color: var(--danger);
-      border: 1px solid var(--danger-border);
-      border-radius: 8px;
-      padding: 8px 14px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: 'Inter', sans-serif;
-      transition: all 0.15s;
-    }
-    .pause-btn:hover { background: rgba(248, 113, 113, 0.15); }
-    .pause-btn-danger { background: rgba(248, 113, 113, 0.12); }
+    .dc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 900px) { .dc-grid { grid-template-columns: 1fr; } }
 
-    .dash-nav {
-      background: var(--bg-deep); border-bottom: 1px solid var(--border);
-      padding: 0 24px; display: flex; gap: 4px;
-    }
-    .dash-nav a {
-      display: inline-block; padding: 14px 16px;
-      font-size: 15px; font-weight: 500; color: var(--text-2);
-      text-decoration: none; border-bottom: 2px solid transparent;
-      transition: color 0.15s, border-color 0.15s;
-    }
-    .dash-nav a.active, .dash-nav a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+    .order-card { background: #fff; border-radius: 14px; border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06); overflow: hidden; }
+    .order-card.hidden-card { display: none; }
+    .oc-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px 0; flex-wrap: wrap; }
+    .oc-folio { font-size: 13px; font-weight: 700; color: var(--color-fog-dash-muted); }
+    .oc-type-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--accent-dim); color: var(--accent); }
+    .oc-status-badge { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+    .oc-time { margin-left: auto; font-size: 13px; color: var(--color-fog-dash-muted); }
 
-    .stats-grid {
-      display: grid; grid-template-columns: repeat(3,1fr);
-      gap: 12px; padding: 24px; max-width: 960px; margin: 0 auto;
-      position: relative; z-index: 1;
-    }
-    .stat-card {
-      background: var(--bg-surface); border-radius: 14px;
-      padding: 20px 22px; border: 1px solid var(--border);
-    }
-    .stat-label {
-      font-size: 12px; font-weight: 700; color: var(--text-3);
-      text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px;
-    }
-    .stat-value {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 36px; font-weight: 700; color: var(--accent);
-    }
+    .oc-body { padding: 12px 18px 0; }
+    .oc-customer { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+    .oc-address { font-size: 13px; color: var(--color-fog-dash-muted); margin-bottom: 10px; }
 
-    .orders-section { padding: 0 24px 48px; max-width: 960px; margin: 0 auto; position: relative; z-index: 1; }
-    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-    .section-title { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 700; color: var(--text-1); }
-    .live-badge { font-size: 13px; color: #4ade80; display: flex; align-items: center; gap: 6px; font-weight: 600; }
-    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; animation: pulse 2s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .oc-items { list-style: none; padding: 8px 10px; background: rgba(0,0,0,0.025); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+    .oc-item-row { display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
+    .oc-item-qty { color: var(--accent); font-weight: 700; flex-shrink: 0; min-width: 22px; }
+    .oc-item-name { flex: 1; }
+    .oc-item-sub { color: var(--color-fog-dash-muted); font-size: 13px; }
 
-    .orders-list { display: flex; flex-direction: column; gap: 10px; }
+    .oc-notes { font-size: 13px; font-style: italic; color: var(--color-fog-dash-muted); background: rgba(199,85,31,0.05); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
 
-    .order-card {
-      background: var(--bg-surface); border-radius: 14px;
-      overflow: hidden; border: 1px solid var(--border);
-      border-left: 3px solid var(--accent);
-    }
-    .order-head {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 18px 0;
-    }
-    .order-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .order-id   { font-size: 13px; font-weight: 700; color: var(--text-3); letter-spacing: 0.5px; }
-    .order-badge {
-      font-size: 12px; font-weight: 700; padding: 3px 10px;
-      border-radius: 999px; letter-spacing: 0.3px;
-    }
-    .order-time  { font-size: 13px; color: var(--text-3); }
-    .order-total { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 700; color: var(--text-1); }
+    .oc-eta { margin-bottom: 14px; }
 
-    .order-body { padding: 10px 18px 14px; }
-    .order-name { font-size: 16px; font-weight: 600; color: var(--text-1); margin-bottom: 4px; }
-    .order-info { font-size: 14px; color: var(--text-2); margin-bottom: 10px; }
-    .order-items-list {
-      list-style: none; margin: 2px 0 10px; padding: 8px 10px;
-      background: rgba(250,246,240,0.03); border: 1px solid var(--border);
-      border-radius: 8px; display: flex; flex-direction: column; gap: 5px;
-    }
-    .order-item-row { display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
-    .order-item-qty { color: var(--accent); font-weight: 700; flex-shrink: 0; min-width: 24px; }
-    .order-item-name { color: var(--text-1); flex: 1; }
-    .order-item-subtotal { color: var(--text-3); font-size: 13px; flex-shrink: 0; }
-    .order-notes { font-size: 13px; color: var(--text-2); margin: -4px 0 10px; font-style: italic; }
+    .oc-map-toggle { background: none; border: none; color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; padding: 0; margin-bottom: 10px; display: inline-flex; align-items: center; gap: 4px; }
+    .oc-map { height: 180px; border-radius: 8px; overflow: hidden; margin-bottom: 12px; border: 1px solid var(--border); }
 
-    .order-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .action-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 18px; border-radius: 8px; border: 1px solid;
-      cursor: pointer; font-size: 14px; font-weight: 600;
-      font-family: 'Inter', sans-serif; transition: opacity 0.15s;
-    }
-    .action-btn:hover { opacity: 0.8; }
-    .action-btn.sm { padding: 8px 14px; }
+    .oc-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+    .oc-total-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--color-fog-dash-muted); text-transform: uppercase; }
+    .oc-total-amount { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 700; }
+    .oc-actions { display: flex; gap: 8px; }
+    .oc-btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; transition: opacity 0.15s; }
+    .oc-btn-primary:hover { opacity: 0.9; }
+    .oc-btn-ghost { background: none; border: 1px solid var(--danger-border); color: #c0392b; border-radius: 8px; padding: 10px 14px; font-size: 13px; cursor: pointer; font-family: 'Inter', sans-serif; }
 
-    .empty-orders { text-align: center; padding: 60px 24px; }
-    .empty-icon-dash { font-size: 42px; margin-bottom: 14px; }
-    .empty-dash-title { font-family: 'Cormorant Garamond', serif; font-size: 20px; color: var(--text-3); }
-
-    .notif-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: none;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 6px 12px;
-      color: var(--text-3);
-      cursor: pointer;
-      font-size: 13px;
-      font-family: 'Inter', sans-serif;
-      transition: all 0.15s;
-    }
-    .notif-btn:hover {
-      border-color: var(--accent-border);
-      color: var(--text-2);
-    }
-
-    @keyframes slideUpFade {
-      from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.98);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-    }
-
-    .order-card-enter {
-      animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-
-    @keyframes pendingPulse {
-      0%, 100% { 
-        border-left-color: var(--accent);
-        box-shadow: 0 0 0 0 rgba(176, 64, 48, 0.1);
-      }
-      50% { 
-        border-left-color: #c44a3a;
-        box-shadow: 0 0 0 4px rgba(176, 64, 48, 0);
-      }
-    }
-
-    .order-card-pending {
-      animation: pendingPulse 3s ease-in-out infinite;
-    }
-
-    .btn-ripple {
-      position: relative;
-      overflow: hidden;
-    }
-
-    .btn-ripple::after {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 0;
-      height: 0;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 50%;
-      transform: translate(-50%, -50%);
-      transition: width 0.3s, height 0.3s;
-    }
-
-    .btn-ripple:active::after {
-      width: 200%;
-      height: 200%;
-    }
-
-    @keyframes emberPulse {
-      0%, 100% {
-        filter: drop-shadow(0 0 2px rgba(176, 64, 48, 0.3));
-        transform: scale(1);
-      }
-      50% {
-        filter: drop-shadow(0 0 6px rgba(176, 64, 48, 0.5));
-        transform: scale(1.02);
-      }
-    }
-
-    .logo-ember {
-      animation: emberPulse 2s ease-in-out infinite;
-    }
-
-    .icon-inline {
-      display: inline-block;
-      vertical-align: middle;
-    }
-
-    @media (max-width: 640px) {
-      .topbar { padding: 0 14px; }
-      .topbar-left { gap: 10px; }
-      .logo-sm { width: 32px; height: 32px; font-size: 13px; }
-      .biz-name { font-size: 16px; }
-      .biz-sub { font-size: 10px; letter-spacing: 1px; }
-
-      .topbar-right {
-        gap: 6px; min-width: 0;
-        overflow-x: auto; -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-      }
-      .topbar-right::-webkit-scrollbar { display: none; }
-      .notif-btn, .open-toggle, .topbar-link, .logout-btn { flex-shrink: 0; }
-      .notif-btn { padding: 6px 10px; font-size: 12px; }
-      .open-toggle { padding: 5px 11px; font-size: 12px; }
-      .topbar-link { font-size: 12px; }
-      .logout-btn { font-size: 12px; }
-
-      .pause-bar-inner { flex-wrap: wrap; gap: 10px; }
-
-      .dash-nav { padding: 0 14px; }
-      .dash-nav a { padding: 12px 11px; font-size: 14px; }
-
-      .stats-grid { grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px; }
-      .stats-grid .stat-card:nth-child(3) { grid-column: 1 / -1; }
-      .stat-card { padding: 16px 16px; }
-
-      .order-head { flex-wrap: wrap; gap: 6px; }
-    }
+    .dc-empty { text-align: center; padding: 60px 24px; grid-column: 1 / -1; }
+    .dc-empty-title { font-family: 'Cormorant Garamond', serif; font-size: 20px; color: var(--color-fog-dash-muted); margin-top: 10px; }
   </style>
 </head>
-<body>
-  <div class="embers" aria-hidden="true">
-    <span class="ember" style="left:5%;width:5px;height:5px;animation-duration:7s;animation-delay:0s;--drift:20px"></span>
-    <span class="ember" style="left:25%;width:4px;height:4px;animation-duration:10s;animation-delay:1.5s;--drift:-18px"></span>
-    <span class="ember" style="left:55%;width:5px;height:5px;animation-duration:9s;animation-delay:0.8s;--drift:22px"></span>
-    <span class="ember" style="left:80%;width:4px;height:4px;animation-duration:11s;animation-delay:2.2s;--drift:-14px"></span>
-  </div>
+<body data-surface="dashboard">
+  <div class="dash-layout">
+    <Sidebar business={business} activeNav="pedidos" todaySales={todaySales} todayOrdersCount={todayOrders.length} activeOrdersCount={activeOrdersCount} />
 
-  <header class="topbar">
-    <div class="topbar-left">
-      <div class="logo-sm">
-        {business.logo_url ? <img src={business.logo_url} alt="" /> : initials}
-      </div>
-      <div class="biz-info">
-        <p class="biz-name">{business.name}</p>
-        <p class="biz-sub">Panel de pedidos</p>
-      </div>
-    </div>
-    <div class="topbar-right">
-      <button id="notif-btn" onclick="initNotifications()" class="notif-btn btn-ripple">
-        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-        </svg>
-        Notificaciones
-      </button>
-      <button id="toggle-open" class="open-toggle btn-ripple" onclick="toggleOpen()"
-        style={businessStatus === 'closed-manual'
-          ? 'background:rgba(250,246,240,0.05);color:var(--text-3);border:1px solid var(--border)'
-          : isOpenNow
-            ? 'background:rgba(74,222,128,0.1);color:#4ade80;border:1px solid rgba(74,222,128,0.25)'
-            : 'background:rgba(176,64,48,0.08);color:#C4A882;border:1px solid rgba(176,64,48,0.2)'}>
-        {businessStatus === 'closed-manual' ? '○ Cerrado' : isOpenNow ? <>
-          <svg class="icon-inline logo-ember" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2c0 0-3 4-3 9 0 2.5 1.5 4 3 5 1.5-1 3-2.5 3-5 0-5-3-9-3-9z" fill="currentColor" opacity="0.9"/>
-            <path d="M8 14c0 3 2 5 4 6 2-1 4-3 4-6 0-2-1-3.5-2-4.5" fill="none"/>
-          </svg>
-          Abierto
-        </> : '🕒 Cerrado (horario)'}
-      </button>
-      <a href={`/${business.slug}`} target="_blank" class="topbar-link">Ver tienda ↗</a>
-      <button class="logout-btn btn-ripple" onclick="handleLogout()">Salir</button>
-    </div>
-  </header>
-
-  {business.subscription_status !== 'active' && (
-    <div class="pending-payment-banner">
-      <p class="pending-title">⏳ Tu cuenta está pendiente de activación</p>
-      <p class="pending-text">
-        Tu tienda pública todavía no es visible para tus clientes. En cuanto recibamos tu pago de instalación
-        ($2,500 MXN, incluye tu primer mes), la activamos. Mientras tanto, puedes dejar todo listo en
-        <a href="/dashboard/menu">tu menú</a>.
-      </p>
-      {(ownerClabe || ownerPhone) && (
-        <div class="pending-pay-info">
-          {ownerClabe && <span><strong>CLABE:</strong> {ownerClabe}</span>}
-          {ownerPhone && <span><strong>DiMo:</strong> {ownerPhone}</span>}
-          {ownerBankName && <span><strong>Banco:</strong> {ownerBankName}</span>}
+    <main class="dash-content">
+      {business.subscription_status !== 'active' && (
+        <div class="pending-payment-banner">
+          <p class="pending-title">⏳ Tu cuenta está pendiente de activación</p>
+          <p class="pending-text">
+            Tu tienda pública todavía no es visible para tus clientes. En cuanto recibamos tu primer pago
+            ($299 MXN, tu primera mensualidad — sin instalación), la activamos. Mientras tanto, puedes dejar todo listo en
+            <a href="/dashboard/menu">tu menú</a>.
+          </p>
+          {(ownerClabe || ownerPhone) && (
+            <div class="pending-pay-info">
+              {ownerClabe && <span><strong>CLABE:</strong> {ownerClabe}</span>}
+              {ownerPhone && <span><strong>DiMo:</strong> {ownerPhone}</span>}
+              {ownerBankName && <span><strong>Banco:</strong> {ownerBankName}</span>}
+            </div>
+          )}
         </div>
       )}
-    </div>
-  )}
 
-  <div class="pause-bar" id="pause-bar">
-    <div class="pause-bar-inner">
-      <div class="pause-bar-left">
-        <svg class="icon-inline logo-ember" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-          <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
-          <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
-        </svg>
+      <div class="dc-header">
         <div>
-          <p class="pause-bar-title">Pedidos pausados</p>
-          <p class="pause-bar-timer" id="pause-timer">Pausado manualmente</p>
+          <h1 class="dc-title">Pedidos en vivo</h1>
+          <p class="dc-date" id="dc-date">{capitalize(dateLabel)} · {formatTime(now)}</p>
+        </div>
+        <div class="dc-chips">
+          <div class="dc-chip"><p class="dc-chip-num" id="chip-pending">{pendingOrders.length}</p><p class="dc-chip-label">Nuevos</p></div>
+          <div class="dc-chip"><p class="dc-chip-num" id="chip-confirmed">{confirmedOrders.length}</p><p class="dc-chip-label">Preparando</p></div>
+          <div class="dc-chip"><p class="dc-chip-num" id="chip-ready">{readyOrders.length}</p><p class="dc-chip-label">Listos</p></div>
         </div>
       </div>
-      <button class="resume-btn btn-ripple" onclick="resumeOrders()">
-        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/>
-        </svg>
-        Reanudar
-      </button>
-    </div>
-  </div>
 
-  <div class="quick-pause" id="quick-pause" style={business.is_open ? '' : 'display:none;'}>
-    <div class="quick-pause-row">
-      <button onclick="pauseOrders(15)" class="pause-btn btn-ripple">
-        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-          <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
-          <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
-        </svg>
-        15 min
-      </button>
-      <button onclick="pauseOrders(30)" class="pause-btn btn-ripple">
-        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-          <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
-          <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
-        </svg>
-        30 min
-      </button>
-      <button onclick="pauseOrders(60)" class="pause-btn btn-ripple">
-        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-          <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
-          <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>
-        </svg>
-        1 hora
-      </button>
-      <button onclick="pauseOrders(0)" class="pause-btn pause-btn-danger btn-ripple">
-        <svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/>
-          <rect x="8" y="8" width="8" height="8" rx="1" fill="var(--bg-deep)" stroke="none"/>
-        </svg>
-        Cerrar hasta mañana
-      </button>
-    </div>
-  </div>
+      <div class="dc-tabs" id="dc-tabs">
+        <button class="dc-tab active" data-tab="active" onclick="dcSetTab('active')">Pedidos <span class="dc-tab-count" id="tab-count-active">{activeOrdersCount}</span></button>
+        <button class="dc-tab" data-tab="delivered" onclick="dcSetTab('delivered')">Entregados <span class="dc-tab-count" id="tab-count-delivered">{doneOrders.length}</span></button>
+      </div>
 
-  <nav class="dash-nav">
-    <a href="/dashboard" class="active">Pedidos</a>
-    <a href="/dashboard/menu">Menú</a>
-    <a href="/dashboard/reportes">Reportes</a>
-  </nav>
-
-  <div class="stats-grid">
-    <div class="stat-card">
-      <p class="stat-label">Pedidos hoy</p>
-      <p class="stat-value">{todayOrders.length}</p>
-    </div>
-    <div class="stat-card">
-      <p class="stat-label">Pendientes</p>
-      <p class="stat-value" style={pendingOrders.length > 0 ? 'color:var(--accent)' : 'color:var(--text-3)'}>{pendingOrders.length}</p>
-    </div>
-    <div class="stat-card">
-      <p class="stat-label">Venta hoy</p>
-      <p class="stat-value" style="font-size:26px">{formatPrice(todaySales)}</p>
-    </div>
-  </div>
-
-  <div class="orders-section">
-    <div class="section-header">
-      <h2 class="section-title">Pedidos recientes</h2>
-      <span class="live-badge"><span class="live-dot"></span>En vivo</span>
-    </div>
-
-    <div class="orders-list" id="orders-list">
-      {(orders ?? []).length === 0 && (
-        <div class="empty-orders">
-          <div class="empty-icon-dash">🔥</div>
-          <p class="empty-dash-title">Los pedidos aparecerán aquí</p>
-        </div>
-      )}
-
-      {(orders ?? []).map(order => (
-        <div class="order-card" id={`order-${order.id}`} style={`border-left-color:${statusColor[order.status]}`}>
-          <div class="order-head">
-            <div class="order-meta">
-              <span class="order-id">#{order.id.slice(-6).toUpperCase()}</span>
-              <span class="order-badge" style={`background:${statusBg[order.status]};color:${statusColor[order.status]}`}>
-                {statusLabel[order.status]}
-              </span>
-              <span class="order-time">{formatTime(order.created_at)}</span>
-            </div>
-            <span class="order-total">{formatPrice(order.total)}</span>
+      <div class="dc-grid" id="orders-grid">
+        {allOrders.length === 0 && (
+          <div class="dc-empty">
+            <div style="font-size:42px">🔥</div>
+            <p class="dc-empty-title">Los pedidos aparecerán aquí</p>
           </div>
-          <div class="order-body">
-            <p class="order-name">{order.customer_name}</p>
-            <p class="order-info">
-              {order.customer_phone && `${order.customer_phone} · `}
-              {order.order_type === 'pickup' ? 
-                <span style="display:inline-flex;align-items:center;gap:4px;">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
-                    <polyline points="9 22 9 12 15 12 15 22"/>
-                  </svg>
-                  Recoger
-                </span> : 
-                <span style="display:inline-flex;align-items:center;gap:4px;">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="1" y="3" width="15" height="13"/>
-                    <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/>
-                    <circle cx="5.5" cy="18.5" r="2.5"/>
-                    <circle cx="18.5" cy="18.5" r="2.5"/>
-                  </svg>
-                  Domicilio
-                </span>
-              }
-              {order.payment_method === 'transfer' && <span style="color:#B04030;font-weight:600"> · 🏦 Transferencia</span>}
-            </p>
-            {order.order_items && order.order_items.length > 0 && (
-              <ul class="order-items-list">
-                {order.order_items.map(item => (
-                  <li class="order-item-row">
-                    <span class="order-item-qty">{item.quantity}×</span>
-                    <span class="order-item-name">{item.name_snap}</span>
-                    <span class="order-item-subtotal">{formatPrice(item.subtotal)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {order.notes && (
-              <p class="order-notes">📝 {order.notes}</p>
-            )}
-            {order.order_type === 'delivery' && order.delivery_address && (
-              <p class="order-info" style="margin-top:-6px;color:var(--text-1)">
-                📍 {order.delivery_address.address}
-                {order.delivery_address.references && ` — ${order.delivery_address.references}`}
-              </p>
-            )}
-            <div class="order-actions" id={`actions-${order.id}`}>
-              {order.status === 'pending' && (<>
-                <button class="action-btn btn-ripple" onclick={`updateStatus('${order.id}','confirmed')`}
-                  style="background:rgba(176,64,48,0.1);color:#B04030;border-color:rgba(176,64,48,0.28)">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12"/>
-                  </svg>
-                  Confirmar
-                </button>
-                <button class="action-btn sm btn-ripple" onclick={`updateStatus('${order.id}','cancelled')`}
-                  style="background:rgba(248,113,113,0.08);color:#f87171;border-color:rgba(248,113,113,0.2)">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/>
-                    <line x1="6" y1="6" x2="18" y2="18"/>
-                  </svg>
-                  Cancelar
-                </button>
-              </>)}
-              {order.status === 'confirmed' && (<>
-                <button class="action-btn btn-ripple" onclick={`updateStatus('${order.id}','ready')`}
-                  style="background:rgba(96,165,250,0.08);color:#60a5fa;border-color:rgba(96,165,250,0.2)">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12"/>
-                  </svg>
-                  Marcar listo
-                </button>
-                <button class="action-btn sm btn-ripple" onclick={`updateStatus('${order.id}','cancelled')`}
-                  style="background:rgba(248,113,113,0.08);color:#f87171;border-color:rgba(248,113,113,0.2)">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/>
-                    <line x1="6" y1="6" x2="18" y2="18"/>
-                  </svg>
-                  Cancelar
-                </button>
-              </>)}
-              {order.status === 'ready' && (
-                <button class="action-btn btn-ripple" onclick={`updateStatus('${order.id}','delivered')`}
-                  style="background:rgba(74,222,128,0.08);color:#4ade80;border-color:rgba(74,222,128,0.2)">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12"/>
-                  </svg>
-                  Entregado
-                </button>
-              )}
+        )}
+
+        {allOrders.map(order => {
+          const eta = orderEta(order)
+          const bucket = bucketOf(order.status)
+          return (
+            <div class={`order-card${bucket === 'active' ? '' : ' hidden-card'}`} id={`order-${order.id}`} data-bucket={bucket} data-order-status={order.status}>
+              <div class="oc-head">
+                <span class="oc-folio">#{order.id.slice(-6).toUpperCase()}</span>
+                <span class="oc-status-badge" style={`color:${statusColor[order.status]};background:${statusBg[order.status]}`}>{statusLabel[order.status]}</span>
+                <span class="oc-type-badge">{order.order_type === 'pickup' ? '↑ Recoger' : '↓ A domicilio'}</span>
+                <span class="oc-time">{formatTime(order.created_at)}</span>
+              </div>
+              <div class="oc-body">
+                <p class="oc-customer">{order.customer_name}</p>
+                {order.order_type === 'delivery' && order.delivery_address && (
+                  <p class="oc-address">📍 {order.delivery_address.address}{order.delivery_address.references && ` — ${order.delivery_address.references}`}</p>
+                )}
+                {order.order_items && order.order_items.length > 0 && (
+                  <ul class="oc-items">
+                    {order.order_items.map(item => (
+                      <li class="oc-item-row">
+                        <span class="oc-item-qty">{item.quantity}×</span>
+                        <span class="oc-item-name">{item.name_snap}</span>
+                        <span class="oc-item-sub">{formatPrice(item.subtotal)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {order.notes && <p class="oc-notes">"{order.notes}"</p>}
+                <div class="oc-eta">
+                  <EtaChip variant="detailed" minutes={eta.minutes} km={eta.km} direction={order.order_type === 'delivery' ? 'delivery' : 'pickup'} />
+                </div>
+                {order.eta_route_geometry && (
+                  <>
+                    <button type="button" class="oc-map-toggle" id={`map-toggle-${order.id}`} onclick={`toggleRouteMap('${order.id}')`}>🗺️ Ver ruta ▾</button>
+                    <div class="oc-map" id={`map-${order.id}`} style="display:none"></div>
+                  </>
+                )}
+              </div>
+              <div class="oc-footer">
+                <div>
+                  <p class="oc-total-label">Total</p>
+                  <p class="oc-total-amount">{formatPrice(order.total)}</p>
+                </div>
+                <div class="oc-actions" id={`actions-${order.id}`}>
+                  {order.status === 'pending' && (<>
+                    <button class="oc-btn-primary" onclick={`updateStatus('${order.id}','confirmed')`}>Aceptar pedido</button>
+                    <button class="oc-btn-ghost" onclick={`updateStatus('${order.id}','cancelled')`}>Cancelar</button>
+                  </>)}
+                  {order.status === 'confirmed' && (
+                    <button class="oc-btn-primary" onclick={`updateStatus('${order.id}','ready')`}>Marcar listo</button>
+                  )}
+                  {order.status === 'ready' && (
+                    <button class="oc-btn-primary" onclick={`updateStatus('${order.id}','delivered')`}>Marcar entregado</button>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      ))}
-    </div>
+          )
+        })}
+      </div>
+
+      <div class="dc-empty" id="dc-tab-empty" style="display:none">
+        <div style="font-size:36px">📭</div>
+        <p class="dc-empty-title">No hay pedidos en esta categoría</p>
+      </div>
+    </main>
   </div>
 
-  <div id="dash-config" data-business-id={business.id} data-is-open={String(business.is_open)}
-    data-open-time={business.open_time ?? ''} data-close-time={business.close_time ?? ''} hidden />
+  <div id="dash-config" data-business-id={business.id} hidden />
+  <script type="application/json" id="orders-geometry-data" set:html={JSON.stringify(routeGeometryByOrder)} />
 </body>
 
 <script>
   import { createBrowserClient } from '@supabase/ssr'
-  import { isBusinessOpen } from '../../lib/schedule'
+  import { DEFAULT_PREP_MINUTES } from '../../lib/eta'
+  import { statusLabel, statusColor, statusBg, bucketOf } from '../../lib/orderStatus'
+  import { renderRouteMap } from '../../lib/routeMap'
+  import 'leaflet/dist/leaflet.css'
 
   const sb = createBrowserClient(
     import.meta.env.PUBLIC_SUPABASE_URL,
@@ -704,101 +292,112 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
 
   const config = document.getElementById('dash-config')
   const businessId = config.dataset.businessId
-  let isOpen = config.dataset.isOpen === 'true'
-  const openTime = config.dataset.openTime || null
-  const closeTime = config.dataset.closeTime || null
+
+  // Geometrías de ruta de los pedidos ya renderizados por el servidor
+  // — las de pedidos nuevos (Realtime) se agregan directo en
+  // addOrderCard, porque ahí el objeto `order` completo ya las trae.
+  const routeGeometries = new Map(
+    Object.entries(JSON.parse(document.getElementById('orders-geometry-data')?.textContent || '{}'))
+  )
+  const routeMaps = new Map()
+
+  window.toggleRouteMap = (orderId) => {
+    const container = document.getElementById(`map-${orderId}`)
+    const btn = document.getElementById(`map-toggle-${orderId}`)
+    if (!container) return
+    const opening = container.style.display === 'none'
+    container.style.display = opening ? 'block' : 'none'
+    if (btn) btn.textContent = opening ? '🗺️ Ocultar ruta ▴' : '🗺️ Ver ruta ▾'
+    if (!opening) return
+
+    if (routeMaps.has(orderId)) {
+      routeMaps.get(orderId).invalidateSize()
+      return
+    }
+    const geometry = routeGeometries.get(orderId)
+    if (!geometry?.coordinates?.length) return
+    routeMaps.set(orderId, renderRouteMap(`map-${orderId}`, geometry.coordinates, { interactive: false, zoomControl: true }))
+  }
   let audioCtx = null
   document.addEventListener('click', () => {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)()
   }, { once: true })
 
-  function renderStatusBadge() {
-    const btn = document.getElementById('toggle-open')
-    if (!btn) return
-
-    if (isOpen === false) {
-      btn.innerHTML = '○ Cerrado'
-      btn.style.background = 'rgba(250,246,240,0.05)'
-      btn.style.color = 'var(--text-3)'
-      btn.style.borderColor = 'var(--border)'
-      return
-    }
-
-    if (isBusinessOpen(openTime, closeTime, true)) {
-      btn.innerHTML = `<svg class="icon-inline logo-ember" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c0 0-3 4-3 9 0 2.5 1.5 4 3 5 1.5-1 3-2.5 3-5 0-5-3-9-3-9z" fill="currentColor" opacity="0.9"/><path d="M8 14c0 3 2 5 4 6 2-1 4-3 4-6 0-2-1-3.5-2-4.5" fill="none"/></svg> Abierto`
-      btn.style.background = 'rgba(74,222,128,0.1)'
-      btn.style.color = '#4ade80'
-      btn.style.borderColor = 'rgba(74,222,128,0.25)'
-    } else {
-      btn.innerHTML = '🕒 Cerrado (horario)'
-      btn.style.background = 'rgba(176,64,48,0.08)'
-      btn.style.color = '#C4A882'
-      btn.style.borderColor = 'rgba(176,64,48,0.2)'
-    }
-  }
-
-  renderStatusBadge()
-  setInterval(renderStatusBadge, 60000)
-
-
-  const statusColor = { pending:'#B04030', confirmed:'#60a5fa', ready:'#4ade80', delivered:'#6B7280', cancelled:'#f87171' }
-  const statusBg    = { pending:'rgba(176,64,48,0.12)', confirmed:'rgba(96,165,250,0.1)', ready:'rgba(74,222,128,0.1)', delivered:'rgba(107,114,128,0.1)', cancelled:'rgba(248,113,113,0.1)' }
-  const statusLabel = { pending:'Pendiente', confirmed:'Confirmado', ready:'Listo', delivered:'Entregado', cancelled:'Cancelado' }
   const formatMXN   = n => new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n)
   const formatTime  = ts => new Date(ts).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})
 
-  window.updateStatus = async (orderId, newStatus) => {
-    await sb.from('orders').update({ status: newStatus }).eq('id', orderId)
-    const card = document.getElementById(`order-${orderId}`)
-    if (!card) return
-    card.style.borderLeftColor = statusColor[newStatus]
-    const badge = card.querySelector('.order-badge')
-    if (badge) { badge.textContent = statusLabel[newStatus]; badge.style.color = statusColor[newStatus]; badge.style.background = statusBg[newStatus] }
-    const actions = document.getElementById(`actions-${orderId}`)
-    if (!actions) return
-    if (newStatus === 'confirmed') {
-      actions.innerHTML = `
-        <button class="action-btn btn-ripple" onclick="updateStatus('${orderId}','ready')" style="background:rgba(96,165,250,0.08);color:#60a5fa;border:1px solid rgba(96,165,250,0.2)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-          Marcar listo
-        </button>
-        <button class="action-btn sm btn-ripple" onclick="updateStatus('${orderId}','cancelled')" style="background:rgba(248,113,113,0.08);color:#f87171;border:1px solid rgba(248,113,113,0.2)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
-            <line x1="18" y1="6" x2="6" y2="18"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-          Cancelar
-        </button>`
-      card.classList.remove('order-card-pending')
-    } else if (newStatus === 'ready') {
-      actions.innerHTML = `<button class="action-btn btn-ripple" onclick="updateStatus('${orderId}','delivered')" style="background:rgba(74,222,128,0.08);color:#4ade80;border:1px solid rgba(74,222,128,0.2)">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
-        Entregado
-      </button>`
-    } else { actions.innerHTML = '' }
+  // Reloj en vivo del encabezado — solo actualiza la hora, la fecha no cambia en sesión.
+  setInterval(() => {
+    const el = document.getElementById('dc-date')
+    if (!el) return
+    const parts = el.textContent.split('·')
+    el.textContent = `${parts[0].trim()} · ${formatTime(new Date())}`
+  }, 30000)
+
+  let activeTab = 'active'
+  window.dcSetTab = (tab) => {
+    activeTab = tab
+    document.querySelectorAll('.dc-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab))
+    let visibleCount = 0
+    document.querySelectorAll('.order-card').forEach(card => {
+      const match = card.dataset.bucket === tab
+      card.classList.toggle('hidden-card', !match)
+      if (match) visibleCount++
+    })
+    const empty = document.getElementById('dc-tab-empty')
+    if (empty) empty.style.display = visibleCount === 0 ? 'block' : 'none'
   }
 
-  window.toggleOpen = async () => {
-    isOpen = !isOpen
-    await sb.from('businesses').update({ is_open: isOpen }).eq('id', businessId)
-    renderStatusBadge()
-
-    const quickPause = document.getElementById('quick-pause')
-    if (quickPause) {
-      quickPause.style.display = isOpen ? 'block' : 'none'
-    }
-    if (isOpen) {
-      const pauseBar = document.getElementById('pause-bar')
-      if (pauseBar) pauseBar.style.display = 'none'
-      localStorage.removeItem(`fogon_pause_${businessId}`)
+  function refreshCounts() {
+    // pending/confirmed/ready se cuentan por estado exacto (para los
+    // chips del encabezado); active/delivered son los dos buckets de
+    // las pestañas, y ya no distinguen entre sí los estados activos.
+    const counts = { pending: 0, confirmed: 0, ready: 0, delivered: 0 }
+    document.querySelectorAll('.order-card').forEach(card => {
+      const s = card.dataset.orderStatus
+      if (s === 'pending' || s === 'confirmed' || s === 'ready') counts[s]++
+      else counts.delivered++
+    })
+    document.getElementById('chip-pending').textContent = counts.pending
+    document.getElementById('chip-confirmed').textContent = counts.confirmed
+    document.getElementById('chip-ready').textContent = counts.ready
+    document.getElementById('tab-count-active').textContent = counts.pending + counts.confirmed + counts.ready
+    document.getElementById('tab-count-delivered').textContent = counts.delivered
+    const empty = document.getElementById('dc-tab-empty')
+    if (empty) {
+      const visible = document.querySelectorAll(`.order-card[data-bucket="${activeTab}"]`).length
+      empty.style.display = visible === 0 ? 'block' : 'none'
     }
   }
 
-  window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
+  function etaChipHtml(order) {
+    // Se duplica aquí porque las tarjetas insertadas por Realtime se
+    // arman en HTML plano, no como componente Astro. Mismo criterio
+    // que orderEta() en el frontmatter: ambos tipos de pedido usan el
+    // ETA real guardado en el pedido cuando existe (OSRM, calculado en
+    // el checkout para domicilio o en /pedido/[id] para recoger); si
+    // no hay uno guardado todavía, cae al tiempo de preparación.
+    const isDelivery = order.order_type === 'delivery'
+    const hasKm = order.eta_minutes != null
+    const minutes = hasKm ? order.eta_minutes : DEFAULT_PREP_MINUTES
+    const icon = isDelivery
+      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>'
+      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>'
+    const distanceCol = hasKm ? `
+        <div class="eta-col eta-col-right" style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+          <span class="eta-label" style="font-size:10px;font-weight:700;letter-spacing:0.8px;color:#8A7A62;text-transform:uppercase">DISTANCIA</span>
+          <span class="eta-value" style="font-family:'Cormorant Garamond',serif;font-size:20px;color:#1C1208">${order.eta_km} <em style="font-style:normal;font-size:13px;color:#8A7A62">km</em></span>
+        </div>` : ''
+    return `<div class="eta-chip eta-chip-detailed" style="display:flex;align-items:center;gap:12px;background:rgba(199,85,31,0.07);border:1px solid rgba(199,85,31,0.18);border-radius:10px;padding:10px 14px">
+      <div class="eta-icon" style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:rgba(199,85,31,0.14);color:#C7551F;display:flex;align-items:center;justify-content:center">${icon}</div>
+      <div class="eta-cols" style="flex:1;display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+        <div class="eta-col" style="display:flex;flex-direction:column;gap:3px">
+          <span class="eta-label" style="font-size:10px;font-weight:700;letter-spacing:0.8px;color:#8A7A62;text-transform:uppercase">${isDelivery ? 'A DOMICILIO' : 'AL RESTAURANTE'}</span>
+          <span class="eta-value" style="font-family:'Cormorant Garamond',serif;font-size:20px;color:#1C1208">${minutes} <em style="font-style:normal;font-size:13px;color:#8A7A62">min</em></span>
+        </div>${distanceCol}
+      </div>
+    </div>`
+  }
 
   function escapeHtml(str) {
     const div = document.createElement('div')
@@ -806,68 +405,131 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     return div.innerHTML
   }
 
+  // Única fuente de verdad para los botones de acción por estado — la
+  // usan tanto addOrderCard (pedido nuevo) como applyOrderStatus
+  // (transición, propia o de otro dispositivo vía Realtime), para no
+  // repetir el marcado en dos lugares que se puedan desincronizar.
+  function actionsHtmlFor(orderId, status) {
+    if (status === 'pending') {
+      return `
+        <button class="oc-btn-primary" onclick="updateStatus('${orderId}','confirmed')">Aceptar pedido</button>
+        <button class="oc-btn-ghost" onclick="updateStatus('${orderId}','cancelled')">Cancelar</button>`
+    }
+    if (status === 'confirmed') {
+      return `<button class="oc-btn-primary" onclick="updateStatus('${orderId}','ready')">Marcar listo</button>`
+    }
+    if (status === 'ready') {
+      return `<button class="oc-btn-primary" onclick="updateStatus('${orderId}','delivered')">Marcar entregado</button>`
+    }
+    return ''
+  }
+
+  // Aplica un estado de pedido a su tarjeta: la mueve a su pestaña
+  // (o la oculta si no es la activa) y refresca sus botones. Se llama
+  // tanto al hacer clic localmente (respuesta instantánea) como desde
+  // el evento UPDATE de Realtime (para reflejar cambios hechos desde
+  // otro dispositivo/pestaña) — aplicar el mismo estado dos veces es
+  // inofensivo.
+  function applyOrderStatus(order) {
+    const card = document.getElementById(`order-${order.id}`)
+    if (!card) return
+    const bucket = bucketOf(order.status)
+    card.dataset.bucket = bucket
+    card.dataset.orderStatus = order.status
+    card.classList.toggle('hidden-card', bucket !== activeTab)
+
+    const badge = card.querySelector('.oc-status-badge')
+    if (badge) {
+      badge.textContent = statusLabel[order.status]
+      badge.style.color = statusColor[order.status]
+      badge.style.background = statusBg[order.status]
+    }
+
+    const actions = document.getElementById(`actions-${order.id}`)
+    if (actions) actions.innerHTML = actionsHtmlFor(order.id, order.status)
+    refreshCounts()
+  }
+
+  // A diferencia de Domicilio (ETA real ya viene en el pedido desde
+  // que se crea, en el checkout), Recoger solo tiene el ETA real
+  // después: se calcula y guarda desde /pedido/[id] una vez que el
+  // cliente entrega su geolocalización, lo cual llega aquí como un
+  // UPDATE por Realtime en vez de venir ya en la tarjeta recién creada
+  // — por eso hace falta refrescar el chip y aparecer el botón "Ver
+  // ruta" cuando ese UPDATE trae el ETA real por primera vez.
+  function refreshOrderEta(order) {
+    if (order.eta_minutes == null) return
+    const card = document.getElementById(`order-${order.id}`)
+    if (!card) return
+
+    const etaSlot = card.querySelector('.oc-eta')
+    if (etaSlot) etaSlot.innerHTML = etaChipHtml(order)
+
+    if (etaSlot && order.eta_route_geometry && !routeGeometries.has(order.id)) {
+      routeGeometries.set(order.id, order.eta_route_geometry)
+      if (!document.getElementById(`map-toggle-${order.id}`)) {
+        etaSlot.insertAdjacentHTML('afterend', `
+          <button type="button" class="oc-map-toggle" id="map-toggle-${order.id}" onclick="toggleRouteMap('${order.id}')">🗺️ Ver ruta ▾</button>
+          <div class="oc-map" id="map-${order.id}" style="display:none"></div>`)
+      }
+    }
+  }
+
+  window.updateStatus = async (orderId, newStatus) => {
+    const { error } = await sb.from('orders').update({ status: newStatus }).eq('id', orderId)
+    if (error) return
+    applyOrderStatus({ id: orderId, status: newStatus })
+  }
+
   async function addOrderCard(order) {
-    const list = document.getElementById('orders-list')
+    const grid = document.getElementById('orders-grid')
     const card = document.createElement('div')
     card.id = `order-${order.id}`
-    card.className = 'order-card order-card-enter'
-    
-    if (order.status === 'pending') {
-      card.classList.add('order-card-pending')
-    }
+    card.className = 'order-card'
+    card.dataset.bucket = 'active'
+    card.dataset.orderStatus = 'pending'
+    if (activeTab !== 'active') card.classList.add('hidden-card')
+
+    const hasRoute = !!order.eta_route_geometry
+    if (hasRoute) routeGeometries.set(order.id, order.eta_route_geometry)
 
     const { data: items } = await sb.from('order_items').select('*').eq('order_id', order.id)
     const itemsHtml = (items && items.length > 0)
-      ? `<ul class="order-items-list">${items.map(item => `
-          <li class="order-item-row">
-            <span class="order-item-qty">${item.quantity}×</span>
-            <span class="order-item-name">${escapeHtml(item.name_snap)}</span>
-            <span class="order-item-subtotal">${formatMXN(item.subtotal)}</span>
+      ? `<ul class="oc-items">${items.map(item => `
+          <li class="oc-item-row">
+            <span class="oc-item-qty">${item.quantity}×</span>
+            <span class="oc-item-name">${escapeHtml(item.name_snap)}</span>
+            <span class="oc-item-sub">${formatMXN(item.subtotal)}</span>
           </li>`).join('')}</ul>`
       : ''
-    
-    card.style.borderLeftColor = '#B04030'
+
     card.innerHTML = `
-      <div class="order-head">
-        <div class="order-meta">
-          <span class="order-id">#${order.id.slice(-6).toUpperCase()}</span>
-          <span class="order-badge" style="background:rgba(176,64,48,0.12);color:#B04030">Pendiente</span>
-          <span class="order-time">${formatTime(order.created_at)}</span>
-        </div>
-        <span class="order-total">${formatMXN(order.total)}</span>
+      <div class="oc-head">
+        <span class="oc-folio">#${order.id.slice(-6).toUpperCase()}</span>
+        <span class="oc-status-badge" style="color:${statusColor.pending};background:${statusBg.pending}">${statusLabel.pending}</span>
+        <span class="oc-type-badge">${order.order_type === 'pickup' ? '↑ Recoger' : '↓ A domicilio'}</span>
+        <span class="oc-time">${formatTime(order.created_at)}</span>
       </div>
-      <div class="order-body">
-        <p class="order-name">${order.customer_name}</p>
-        <p class="order-info">
-          ${order.customer_phone ? order.customer_phone + ' · ' : ''}
-          ${order.order_type === 'pickup' 
-            ? '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> Recoger</span>' 
-            : '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg> Domicilio</span>'}
-          ${order.payment_method === 'transfer' ? ' · <span style="color:#B04030;font-weight:600">🏦 Transferencia</span>' : ''}
-        </p>
-        ${itemsHtml}
-        ${order.notes ? `<p class="order-notes">📝 ${escapeHtml(order.notes)}</p>` : ''}
+      <div class="oc-body">
+        <p class="oc-customer">${escapeHtml(order.customer_name)}</p>
         ${order.order_type === 'delivery' && order.delivery_address ? `
-        <p class="order-info" style="margin-top:-6px;color:var(--text-1)">
-          📍 ${order.delivery_address.address}${order.delivery_address.references ? ' — ' + order.delivery_address.references : ''}
-        </p>` : ''}
-        <div class="order-actions" id="actions-${order.id}">
-          <button class="action-btn btn-ripple" onclick="updateStatus('${order.id}','confirmed')" style="background:rgba(176,64,48,0.1);color:#B04030;border:1px solid rgba(176,64,48,0.28)">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            Confirmar
-          </button>
-          <button class="action-btn sm btn-ripple" onclick="updateStatus('${order.id}','cancelled')" style="background:rgba(248,113,113,0.08);color:#f87171;border:1px solid rgba(248,113,113,0.2)">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-            Cancelar
-          </button>
+          <p class="oc-address">📍 ${escapeHtml(order.delivery_address.address)}${order.delivery_address.references ? ' — ' + escapeHtml(order.delivery_address.references) : ''}</p>` : ''}
+        ${itemsHtml}
+        ${order.notes ? `<p class="oc-notes">"${escapeHtml(order.notes)}"</p>` : ''}
+        <div class="oc-eta">${etaChipHtml(order)}</div>
+        ${hasRoute ? `
+          <button type="button" class="oc-map-toggle" id="map-toggle-${order.id}" onclick="toggleRouteMap('${order.id}')">🗺️ Ver ruta ▾</button>
+          <div class="oc-map" id="map-${order.id}" style="display:none"></div>` : ''}
+      </div>
+      <div class="oc-footer">
+        <div>
+          <p class="oc-total-label">Total</p>
+          <p class="oc-total-amount">${formatMXN(order.total)}</p>
         </div>
+        <div class="oc-actions" id="actions-${order.id}">${actionsHtmlFor(order.id, 'pending')}</div>
       </div>`
-    list.insertAdjacentElement('afterbegin', card)
+    grid.insertAdjacentElement('afterbegin', card)
+    refreshCounts()
   }
 
   async function startOrdersRealtime() {
@@ -881,6 +543,8 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
           playOrderSound()
           sendOrderNotification(payload.new)
         })
+      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'orders', filter:`business_id=eq.${businessId}` },
+        payload => { applyOrderStatus(payload.new); refreshOrderEta(payload.new) })
       .subscribe()
   }
   startOrdersRealtime()
@@ -891,7 +555,7 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
 
   function playOrderSound() {
     try {
-     const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)()
+      const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)()
       const times = [0, 0.15, 0.3]
       times.forEach(t => {
         const osc = ctx.createOscillator()
@@ -920,121 +584,5 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     })
     n.onclick = () => { window.focus(); n.close() }
   }
-
-  window.initNotifications = async () => {
-    const btn = document.getElementById('notif-btn')
-    if (Notification.permission === 'granted') {
-      btn.innerHTML = `<svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Activadas`
-      btn.style.color = '#4ade80'
-      btn.style.borderColor = 'rgba(74,222,128,0.3)'
-      return
-    }
-    const perm = await Notification.requestPermission()
-    if (perm === 'granted') {
-      btn.innerHTML = `<svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Activadas`
-      btn.style.color = '#4ade80'
-      btn.style.borderColor = 'rgba(74,222,128,0.3)'
-    } else {
-      btn.innerHTML = `<svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Bloqueadas`
-      btn.style.color = '#f87171'
-    }
-  }
-
-  if (Notification.permission === 'granted') {
-    const btn = document.getElementById('notif-btn')
-    if (btn) { 
-      btn.innerHTML = `<svg class="icon-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Activadas`
-      btn.style.color = '#4ade80'
-      btn.style.borderColor = 'rgba(74,222,128,0.3)'
-    }
-  }
-
-  let pauseEndTime = null
-  let pauseTimerInterval = null
-
-  function checkPauseStatus() {
-    const pauseData = localStorage.getItem(`fogon_pause_${businessId}`)
-    if (pauseData) {
-      const { endTime } = JSON.parse(pauseData)
-      if (endTime && new Date(endTime) > new Date()) {
-        showPauseBar(new Date(endTime))
-      } else if (!endTime) {
-        showPauseBar(null)
-      } else {
-        localStorage.removeItem(`fogon_pause_${businessId}`)
-      }
-    }
-  }
-
-  window.pauseOrders = async function(minutes) {
-    isOpen = false
-    await sb.from('businesses').update({ is_open: false }).eq('id', businessId)
-    renderStatusBadge()
-
-    const quickPause = document.getElementById('quick-pause')
-    if (quickPause) quickPause.style.display = 'none'
-    
-    if (minutes > 0) {
-      const endTime = new Date(Date.now() + minutes * 60000)
-      localStorage.setItem(`fogon_pause_${businessId}`, JSON.stringify({ endTime: endTime.toISOString() }))
-      showPauseBar(endTime)
-      setTimeout(() => resumeOrders(), minutes * 60000)
-    } else {
-      localStorage.setItem(`fogon_pause_${businessId}`, JSON.stringify({ endTime: null }))
-      showPauseBar(null)
-    }
-  }
-
-  window.resumeOrders = async function() {
-    isOpen = true
-    await sb.from('businesses').update({ is_open: true }).eq('id', businessId)
-    renderStatusBadge()
-
-    localStorage.removeItem(`fogon_pause_${businessId}`)
-    if (pauseTimerInterval) {
-      clearInterval(pauseTimerInterval)
-      pauseTimerInterval = null
-    }
-
-    const pauseBar = document.getElementById('pause-bar')
-    if (pauseBar) pauseBar.style.display = 'none'
-    const quickPause = document.getElementById('quick-pause')
-    if (quickPause) quickPause.style.display = 'block'
-  }
-
-
-  function showPauseBar(endTime) {
-    const pauseBar = document.getElementById('pause-bar')
-    const timer = document.getElementById('pause-timer')
-    const quickPause = document.getElementById('quick-pause')
-    
-    if (pauseBar) pauseBar.style.display = 'block'
-    if (quickPause) quickPause.style.display = 'none'
-    
-    if (endTime) {
-      updateTimer(endTime)
-      pauseTimerInterval = setInterval(() => updateTimer(endTime), 1000)
-    } else {
-      if (timer) timer.textContent = 'Pausado manualmente — reanuda cuando estés listo'
-    }
-  }
-
-  function updateTimer(endTime) {
-    const now = new Date()
-    const diff = endTime - now
-    const timer = document.getElementById('pause-timer')
-    
-    if (diff <= 0) {
-      if (timer) timer.textContent = 'Reanudando...'
-      resumeOrders()
-      return
-    }
-    
-    const mins = Math.floor(diff / 60000)
-    const secs = Math.floor((diff % 60000) / 1000)
-    if (timer) timer.textContent = `Se reanudará automáticamente en ${mins}:${secs.toString().padStart(2, '0')}`
-  }
-
-  checkPauseStatus()
 </script>
 </html>

@@ -1,6 +1,9 @@
 ---
 export const prerender = false
+import '../../styles/global.css'
 import { supabase } from '../../lib/supabase'
+import EtaChip from '../../components/ui/EtaChip.astro'
+import { DEFAULT_PREP_MINUTES } from '../../lib/eta'
 
 const { id } = Astro.params
 
@@ -50,6 +53,40 @@ if (!businessSlug && !notFound && tracking?.business_id) {
     .maybeSingle()
   businessSlug = biz?.slug ?? null
 }
+
+// ← Domicilio calcula y guarda la ruta real (restaurante → dirección)
+// con OSRM en el checkout. Recoger no puede hacer eso ahí (no hay
+// geolocalización del cliente en el checkout) — la calcula y guarda
+// esta misma pantalla, del lado del cliente, la primera vez que se
+// abre (más abajo, vía navigator.geolocation + la función RPC
+// set_pickup_eta). Una vez guardada, ambos tipos leen aquí por igual.
+const hasStoredEta = tracking?.eta_minutes != null
+const eta = hasStoredEta
+  ? { minutes: tracking.eta_minutes, km: tracking.eta_km }
+  : { minutes: DEFAULT_PREP_MINUTES }
+
+// ← Mismo criterio que hasStoredEta: solo hay ruta que dibujar si ya
+// quedó guardada (en el checkout para domicilio, o en una visita
+// anterior a esta pantalla para recoger). Se muestra siempre visible
+// aquí (a diferencia del dashboard) porque el cliente solo ve su
+// propio pedido.
+const routeGeometry = tracking?.eta_route_geometry ?? null
+
+// ← Coordenadas del restaurante para el ETA real de "Recoger" (ruta
+// cliente → restaurante), calculado en el navegador una vez que
+// tengamos la geolocalización del cliente. La ubicación del negocio
+// es pública (ya se muestra en el mapa de la tienda), así que
+// consultarla aquí no rompe ninguna barrera de privacidad. No hace
+// falta si ya tenemos un ETA guardado de una visita anterior.
+let businessCoords = null
+if (orderType === 'pickup' && businessSlug && !hasStoredEta) {
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('latitude, longitude')
+    .eq('slug', businessSlug)
+    .maybeSingle()
+  if (biz?.latitude && biz?.longitude) businessCoords = { lat: biz.latitude, lng: biz.longitude }
+}
 ---
 
 <!doctype html>
@@ -63,12 +100,12 @@ if (!businessSlug && !notFound && tracking?.business_id) {
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --cream:#FAF6F0;
-      --teja:#B04030;
-      --teja-dim:rgba(176,64,48,0.12);
-      --teja-border:rgba(176,64,48,0.3);
-      --text-dark:#2A1810;
-      --text-muted:#9A8878;
+      --cream:var(--color-fog-bg);
+      --teja:var(--color-fog-brasa);
+      --teja-dim:rgba(199,85,31,0.12);
+      --teja-border:rgba(199,85,31,0.3);
+      --text-dark:var(--color-fog-text);
+      --text-muted:var(--color-fog-muted);
     }
     body{
       background:var(--cream);color:var(--text-dark);font-family:'Inter',sans-serif;
@@ -76,12 +113,9 @@ if (!businessSlug && !notFound && tracking?.business_id) {
       padding:32px;text-align:center;
     }
 
-    .success-icon{
-      width:72px;height:72px;border-radius:18px;
-      background:var(--teja-dim);border:1.5px solid var(--teja-border);
-      display:flex;align-items:center;justify-content:center;
-      margin:0 auto 24px;font-size:30px;
-    }
+    .success-sello{width:76px;height:76px;margin:0 auto 24px;display:block}
+    .success-eta{width:100%;max-width:300px;margin:4px auto 20px}
+    .route-map{width:100%;max-width:340px;height:220px;border-radius:14px;overflow:hidden;margin:0 auto 20px;border:1px solid rgba(0,0,0,0.08)}
     .success-title{font-family:'Cormorant Garamond',serif;font-size:30px;font-style:italic;color:var(--text-dark);margin-bottom:8px}
     .success-sub{font-size:14px;color:var(--text-muted);margin-bottom:20px;font-family:'Inter',sans-serif}
     .success-num{font-family:'Cormorant Garamond',serif;font-size:44px;color:var(--teja);margin-bottom:24px}
@@ -98,8 +132,8 @@ if (!businessSlug && !notFound && tracking?.business_id) {
       color:var(--text-muted);transition:all 0.4s ease;
     }
     .status-step.active{
-      background:rgba(176,64,48,0.1);
-      color:var(--teja);border:1px solid rgba(176,64,48,0.2);
+      background:rgba(199,85,31,0.1);
+      color:var(--teja);border:1px solid rgba(199,85,31,0.2);
     }
     .status-step.done{
       background:rgba(74,222,128,0.08);
@@ -136,7 +170,7 @@ if (!businessSlug && !notFound && tracking?.business_id) {
     }
     .back-link-cta{
       display:inline-flex;align-items:center;gap:8px;
-      background:var(--teja);color:var(--cream);
+      background:var(--teja);color:#FFFFFF;
       text-decoration:none;border-radius:10px;
       padding:13px 26px;font-size:15px;font-weight:700;
       margin-top:6px;
@@ -147,16 +181,33 @@ if (!businessSlug && !notFound && tracking?.business_id) {
 <body>
   {notFound ? (
     <>
-      <div class="success-icon">❓</div>
+      <img src="/fogon-sello.svg" alt="" class="success-sello" style="opacity:0.4" />
       <h1 class="success-title">No encontramos ese pedido</h1>
       <p class="not-found-note">Revisa el link que te compartieron, o pregúntale al negocio directamente por tu pedido.</p>
     </>
   ) : (
     <>
-      <div class="success-icon">🔥</div>
+      <img src="/fogon-sello.svg" alt="" class="success-sello" />
       <h1 class="success-title" id="success-title">¡Pedido recibido!</h1>
       <p class="success-sub">Tu número de pedido</p>
       <p class="success-num">#{orderShortId}</p>
+
+      <div class="success-eta" id="eta-chip-wrap">
+        <EtaChip minutes={eta.minutes} km={eta.km} direction={orderType === 'delivery' ? 'delivery' : 'pickup'} variant="compact" />
+      </div>
+
+      {routeGeometry ? (
+        <div class="route-map" id="route-map"></div>
+      ) : (orderType === 'pickup' && businessCoords) && (
+        // ← Sin ruta guardada todavía, pero sí podríamos calcularla en
+        // el navegador (más abajo, con la geolocalización del
+        // cliente) — el contenedor se renderiza aquí, oculto, en vez
+        // de crearlo por JS: un <div> creado con document.createElement
+        // no lleva el atributo data-astro-cid-* que Astro usa para
+        // aplicarle el CSS de .route-map (ancho/alto), y quedaría en
+        // un mapa de 0×0 invisible.
+        <div class="route-map" id="route-map" style="display:none"></div>
+      )}
 
       {waUrl && (
         <a class="wa-receipt-btn" href={waUrl} target="_blank" rel="noopener">
@@ -200,15 +251,40 @@ if (!businessSlug && !notFound && tracking?.business_id) {
     </>
   )}
 
-  <div id="track-cfg" data-order-id={id} data-order-type={orderType} data-initial-status={initialStatus} data-business-id={tracking?.business_id ?? ''} data-business-slug={businessSlug ?? ''} hidden></div>
+  <div id="track-cfg" data-order-id={id} data-order-type={orderType} data-initial-status={initialStatus} data-business-id={tracking?.business_id ?? ''} data-business-slug={businessSlug ?? ''} data-biz-lat={businessCoords?.lat ?? ''} data-biz-lng={businessCoords?.lng ?? ''} data-has-stored-eta={String(hasStoredEta)} hidden></div>
+  {routeGeometry && <script type="application/json" id="route-geometry-data" set:html={JSON.stringify(routeGeometry)} />}
 
   {!notFound && (
     <script>
       import { createClient } from '@supabase/supabase-js'
+      import { routeEta } from '../../lib/eta'
+      import { renderRouteMap } from '../../lib/routeMap'
+      import 'leaflet/dist/leaflet.css'
+
+      // ← El servidor ya renderizó #route-map oculto cuando hay chance
+      // de que Recoger calcule una ruta aquí (ver frontmatter) — no se
+      // crea por JS: un <div> creado con document.createElement no
+      // lleva el atributo data-astro-cid-* que Astro usa para
+      // aplicarle el CSS de .route-map (ancho/alto), y quedaría en un
+      // mapa de 0×0 invisible.
+      function ensureRouteMapContainer() {
+        const mapEl = document.getElementById('route-map')
+        if (mapEl) mapEl.style.display = 'block'
+        return mapEl
+      }
 
       const sb = createClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUBLIC_SUPABASE_ANON_KEY)
 
       const cfg = document.getElementById('track-cfg')
+
+      // ← Mapa siempre visible (no colapsado, a diferencia del
+      // dashboard) porque esta pantalla es del cliente y solo muestra
+      // su propio pedido — no hay varias tarjetas que saturar.
+      const routeGeometryEl = document.getElementById('route-geometry-data')
+      if (routeGeometryEl) {
+        const geometry = JSON.parse(routeGeometryEl.textContent)
+        if (geometry?.coordinates?.length) renderRouteMap('route-map', geometry.coordinates, { interactive: true })
+      }
 
       window.saveTrackingLink = async () => {
         const url = window.location.href
@@ -240,6 +316,55 @@ if (!businessSlug && !notFound && tracking?.business_id) {
       const initialStatus = cfg.dataset.initialStatus
       const businessId = cfg.dataset.businessId
       const businessSlug = cfg.dataset.businessSlug
+
+      // ← Recoger: pedimos la ubicación del navegador de forma pasiva
+      // (una sola vez, sin explicarle nada antes ni insistir después)
+      // para mostrar la ruta real cliente → restaurante, igual que
+      // Domicilio calcula restaurante → dirección en el checkout. Si
+      // ya hay un ETA guardado de una visita anterior (hasStoredEta),
+      // no hace falta volver a pedir permiso ni recalcular — SSR ya
+      // mostró el chip y el mapa arriba. Si el permiso se niega, no
+      // está disponible, o no tenemos las coordenadas del restaurante,
+      // el chip se queda tal cual quedó renderizado en el servidor
+      // (tiempo de preparación).
+      const bizLat = parseFloat(cfg.dataset.bizLat ?? '')
+      const bizLng = parseFloat(cfg.dataset.bizLng ?? '')
+      const hasStoredEta = cfg.dataset.hasStoredEta === 'true'
+      if (orderType === 'pickup' && !hasStoredEta && !isNaN(bizLat) && !isNaN(bizLng) && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const eta = await routeEta(
+              { lat: pos.coords.latitude, lng: pos.coords.longitude },
+              { lat: bizLat, lng: bizLng }
+            )
+            if (!eta) return
+            const combined = document.querySelector('#eta-chip-wrap .eta-combined')
+            if (combined) {
+              const kmLabel = eta.km.toLocaleString('es-MX', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+              combined.textContent = `${eta.minutes} min · ${kmLabel} km`
+            }
+
+            if (eta.geometry?.coordinates?.length && ensureRouteMapContainer()) {
+              renderRouteMap('route-map', eta.geometry.coordinates, { interactive: true })
+            }
+
+            // Guarda el ETA real en el pedido (vía RPC acotada — el
+            // cliente no tiene sesión, y esta función solo deja
+            // escribir eta_* en un pedido "pickup" que todavía no
+            // tenga uno) para que el dashboard del negocio deje de
+            // mostrar el fallback de 15 min, igual que ya pasa con
+            // Domicilio desde el checkout.
+            await sb.rpc('set_pickup_eta', {
+              p_order_id: orderId,
+              p_minutes: eta.minutes,
+              p_km: eta.km,
+              p_geometry: eta.geometry ?? null
+            })
+          },
+          () => { /* denegado o no disponible — se queda el tiempo de preparación, sin insistir */ },
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+        )
+      }
 
       // El pedido ya terminó (entregado o cancelado) — borramos el
       // aviso de "pedido reciente" de la tienda para que no se quede

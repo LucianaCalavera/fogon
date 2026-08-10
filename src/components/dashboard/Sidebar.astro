@@ -1,0 +1,298 @@
+---
+interface Props {
+  business: {
+    id: string
+    slug: string
+    name: string
+    is_open: boolean
+    open_time: string | null
+    close_time: string | null
+  }
+  activeNav: 'pedidos' | 'menu' | 'reportes'
+  todaySales: number
+  todayOrdersCount: number
+  activeOrdersCount: number
+}
+
+const { business, activeNav, todaySales, todayOrdersCount, activeOrdersCount } = Astro.props
+const formatPrice = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n)
+---
+
+<aside class="dash-sidebar">
+  <div class="ds-header">
+    <img src="/fogon-sello.svg" alt="" class="ds-sello" />
+    <div class="ds-brand">
+      <p class="ds-brand-name">Fogón</p>
+      <p class="ds-biz-name">{business.name}</p>
+    </div>
+  </div>
+
+  <div class="ds-status-row">
+    <span class="ds-status-pill" id="ds-status-pill">
+      {business.is_open ? '● Abierto' : '○ Cerrado'}
+    </span>
+    <button class="ds-status-action" id="ds-status-action" onclick="dsToggleOpen()">
+      {business.is_open ? 'Cerrar' : 'Abrir'}
+    </button>
+    <button class="ds-notif-btn" id="ds-notif-btn" onclick="dsInitNotifications()" aria-label="Activar notificaciones">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    </button>
+  </div>
+
+  <div class="ds-pause-bar" id="ds-pause-bar">
+    <p class="ds-pause-title">Pedidos pausados</p>
+    <p class="ds-pause-timer" id="ds-pause-timer">Pausado manualmente</p>
+    <button class="ds-resume-btn" onclick="dsResumeOrders()">Reanudar</button>
+  </div>
+
+  <div class="ds-quick-pause" id="ds-quick-pause" style={business.is_open ? '' : 'display:none'}>
+    <button class="ds-pause-btn" onclick="dsPauseOrders(15)">15 min</button>
+    <button class="ds-pause-btn" onclick="dsPauseOrders(30)">30 min</button>
+    <button class="ds-pause-btn" onclick="dsPauseOrders(60)">1 hora</button>
+    <button class="ds-pause-btn ds-pause-btn-danger" onclick="dsPauseOrders(0)">Cerrar hasta mañana</button>
+  </div>
+
+  <nav class="ds-nav">
+    <a href="/dashboard" class={activeNav === 'pedidos' ? 'active' : ''}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span>Pedidos</span>
+      {activeOrdersCount > 0 && <span class="ds-nav-badge">{activeOrdersCount}</span>}
+    </a>
+    <a href="/dashboard/menu" class={activeNav === 'menu' ? 'active' : ''}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      <span>Menú</span>
+    </a>
+    <a href="/dashboard/reportes" class={activeNav === 'reportes' ? 'active' : ''}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      <span>Reportes</span>
+    </a>
+  </nav>
+
+  <div class="ds-footer-links">
+    <a href={`/${business.slug}`} target="_blank">Ver tienda ↗</a>
+    <button onclick="dsLogout()">Salir</button>
+  </div>
+
+  <div class="ds-stat-card">
+    <p class="ds-stat-label">Recaudado hoy</p>
+    <p class="ds-stat-amount">{formatPrice(todaySales)}</p>
+    <div class="ds-stat-row">
+      <span>{todayOrdersCount} Pedido{todayOrdersCount === 1 ? '' : 's'}</span>
+      <span>{activeOrdersCount} En curso</span>
+    </div>
+    <p class="ds-plan-note">Plan $299 MXN/mes · sin comisiones</p>
+  </div>
+
+  <div id="ds-cfg" data-business-id={business.id} data-is-open={String(business.is_open)}
+    data-open-time={business.open_time ?? ''} data-close-time={business.close_time ?? ''} hidden></div>
+</aside>
+
+<style>
+  .dash-sidebar{
+    background:#1C1208;color:#FAF6EE;
+    width:260px;flex-shrink:0;height:100vh;position:sticky;top:0;
+    overflow-y:auto;display:flex;flex-direction:column;
+    padding:22px 18px;border-right:1px solid rgba(199,85,31,0.15);
+  }
+  @media(max-width:900px){.dash-sidebar{width:100%;height:auto;position:relative}}
+
+  .ds-header{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+  .ds-sello{width:32px;height:32px;flex-shrink:0}
+  .ds-brand-name{font-family:'Cormorant Garamond',serif;font-size:20px;color:#FAF6EE;line-height:1.1}
+  .ds-biz-name{font-size:11px;color:#C7551F;text-transform:uppercase;letter-spacing:1.2px;margin-top:2px}
+
+  .ds-status-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .ds-status-pill{
+    flex:1;font-size:13px;font-weight:600;padding:8px 12px;border-radius:8px;
+    background:rgba(74,222,128,0.12);color:#4ade80;font-family:'Inter',sans-serif;
+  }
+  .ds-status-action{
+    background:none;border:1px solid rgba(250,246,238,0.15);color:rgba(250,246,238,0.6);
+    border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;
+  }
+  .ds-notif-btn{
+    width:32px;height:32px;flex-shrink:0;border-radius:8px;
+    background:none;border:1px solid rgba(250,246,238,0.15);color:rgba(250,246,238,0.5);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+  }
+
+  .ds-pause-bar{display:none;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.25);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+  .ds-pause-title{font-size:12px;font-weight:700;color:#f87171;font-family:'Inter',sans-serif}
+  .ds-pause-timer{font-size:11px;color:rgba(250,246,238,0.5);margin:2px 0 8px;font-family:'Inter',sans-serif}
+  .ds-resume-btn{width:100%;background:#C7551F;color:#fff;border:none;border-radius:7px;padding:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+
+  .ds-quick-pause{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+  .ds-pause-btn{
+    background:rgba(248,113,113,0.08);color:#f87171;border:1px solid rgba(248,113,113,0.2);
+    border-radius:7px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;
+  }
+  .ds-pause-btn-danger{background:rgba(248,113,113,0.14)}
+
+  .ds-nav{display:flex;flex-direction:column;gap:3px;margin-bottom:16px}
+  .ds-nav a{
+    display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;
+    color:rgba(250,246,238,0.55);text-decoration:none;font-size:14px;font-family:'Inter',sans-serif;
+    transition:background 0.15s,color 0.15s;
+  }
+  .ds-nav a:hover{background:rgba(199,85,31,0.08);color:rgba(250,246,238,0.85)}
+  .ds-nav a.active{background:rgba(199,85,31,0.14);color:#C7551F;font-weight:600}
+  .ds-nav-badge{
+    margin-left:auto;background:#C7551F;color:#fff;font-size:11px;font-weight:700;
+    border-radius:999px;padding:1px 7px;
+  }
+
+  .ds-footer-links{display:flex;align-items:center;gap:14px;padding:0 12px;margin-bottom:auto;padding-bottom:20px}
+  .ds-footer-links a,.ds-footer-links button{
+    background:none;border:none;color:rgba(250,246,238,0.35);font-size:12px;
+    text-decoration:none;cursor:pointer;font-family:'Inter',sans-serif;padding:0;
+  }
+  .ds-footer-links a:hover,.ds-footer-links button:hover{color:rgba(250,246,238,0.6)}
+
+  .ds-stat-card{background:rgba(250,246,238,0.04);border:1px solid rgba(250,246,238,0.08);border-radius:12px;padding:16px}
+  .ds-stat-label{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:rgba(250,246,238,0.4);margin-bottom:6px}
+  .ds-stat-amount{font-family:'Cormorant Garamond',serif;font-size:28px;color:#C7551F;margin-bottom:8px}
+  .ds-stat-row{display:flex;justify-content:space-between;font-size:12px;color:rgba(250,246,238,0.6);font-family:'Inter',sans-serif}
+  .ds-plan-note{font-size:11px;color:rgba(250,246,238,0.3);margin-top:10px;font-family:'Inter',sans-serif}
+</style>
+
+<script>
+import { createBrowserClient } from '@supabase/ssr'
+import { isBusinessOpen } from '../../lib/schedule'
+
+const sb = createBrowserClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUBLIC_SUPABASE_ANON_KEY)
+const cfg = document.getElementById('ds-cfg')
+const businessId = cfg.dataset.businessId
+let isOpen = cfg.dataset.isOpen === 'true'
+const openTime = cfg.dataset.openTime || null
+const closeTime = cfg.dataset.closeTime || null
+
+function renderStatus() {
+  const pill = document.getElementById('ds-status-pill')
+  const action = document.getElementById('ds-status-action')
+  if (!pill || !action) return
+
+  if (isOpen === false) {
+    pill.textContent = '○ Cerrado'
+    pill.style.background = 'rgba(250,246,238,0.06)'
+    pill.style.color = 'rgba(250,246,238,0.4)'
+    action.textContent = 'Abrir'
+    return
+  }
+
+  if (isBusinessOpen(openTime, closeTime, true)) {
+    pill.textContent = '● Abierto'
+    pill.style.background = 'rgba(74,222,128,0.12)'
+    pill.style.color = '#4ade80'
+  } else {
+    pill.textContent = '🕒 Cerrado (horario)'
+    pill.style.background = 'rgba(176,64,48,0.12)'
+    pill.style.color = '#C4A882'
+  }
+  action.textContent = 'Cerrar'
+}
+renderStatus()
+setInterval(renderStatus, 60000)
+
+window.dsToggleOpen = async () => {
+  isOpen = !isOpen
+  await sb.from('businesses').update({ is_open: isOpen }).eq('id', businessId)
+  renderStatus()
+
+  const quickPause = document.getElementById('ds-quick-pause')
+  if (quickPause) quickPause.style.display = isOpen ? 'flex' : 'none'
+  if (isOpen) {
+    const pauseBar = document.getElementById('ds-pause-bar')
+    if (pauseBar) pauseBar.style.display = 'none'
+    localStorage.removeItem(`fogon_pause_${businessId}`)
+  }
+}
+
+let pauseTimerInterval = null
+
+function showPauseBar(endTime) {
+  const pauseBar = document.getElementById('ds-pause-bar')
+  const timer = document.getElementById('ds-pause-timer')
+  const quickPause = document.getElementById('ds-quick-pause')
+  if (pauseBar) pauseBar.style.display = 'block'
+  if (quickPause) quickPause.style.display = 'none'
+
+  if (endTime) {
+    updateTimer(endTime)
+    pauseTimerInterval = setInterval(() => updateTimer(endTime), 1000)
+  } else if (timer) {
+    timer.textContent = 'Pausado manualmente — reanuda cuando estés listo'
+  }
+}
+
+function updateTimer(endTime) {
+  const diff = endTime.getTime() - Date.now()
+  const timer = document.getElementById('ds-pause-timer')
+  if (diff <= 0) {
+    if (timer) timer.textContent = 'Reanudando...'
+    window.dsResumeOrders()
+    return
+  }
+  const mins = Math.floor(diff / 60000)
+  const secs = Math.floor((diff % 60000) / 1000)
+  if (timer) timer.textContent = `Se reanuda en ${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+window.dsPauseOrders = async (minutes) => {
+  isOpen = false
+  await sb.from('businesses').update({ is_open: false }).eq('id', businessId)
+  renderStatus()
+
+  const quickPause = document.getElementById('ds-quick-pause')
+  if (quickPause) quickPause.style.display = 'none'
+
+  if (minutes > 0) {
+    const endTime = new Date(Date.now() + minutes * 60000)
+    localStorage.setItem(`fogon_pause_${businessId}`, JSON.stringify({ endTime: endTime.toISOString() }))
+    showPauseBar(endTime)
+    setTimeout(() => window.dsResumeOrders(), minutes * 60000)
+  } else {
+    localStorage.setItem(`fogon_pause_${businessId}`, JSON.stringify({ endTime: null }))
+    showPauseBar(null)
+  }
+}
+
+window.dsResumeOrders = async () => {
+  isOpen = true
+  await sb.from('businesses').update({ is_open: true }).eq('id', businessId)
+  renderStatus()
+  localStorage.removeItem(`fogon_pause_${businessId}`)
+  if (pauseTimerInterval) { clearInterval(pauseTimerInterval); pauseTimerInterval = null }
+  const pauseBar = document.getElementById('ds-pause-bar')
+  if (pauseBar) pauseBar.style.display = 'none'
+  const quickPause = document.getElementById('ds-quick-pause')
+  if (quickPause) quickPause.style.display = 'flex'
+}
+
+function checkPauseStatus() {
+  const pauseData = localStorage.getItem(`fogon_pause_${businessId}`)
+  if (!pauseData) return
+  const { endTime } = JSON.parse(pauseData)
+  if (endTime && new Date(endTime) > new Date()) {
+    showPauseBar(new Date(endTime))
+  } else if (!endTime) {
+    showPauseBar(null)
+  } else {
+    localStorage.removeItem(`fogon_pause_${businessId}`)
+  }
+}
+checkPauseStatus()
+
+window.dsLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
+
+window.dsInitNotifications = async () => {
+  const btn = document.getElementById('ds-notif-btn')
+  if (!btn) return
+  if (Notification.permission === 'granted') { btn.style.color = '#4ade80'; return }
+  const perm = await Notification.requestPermission()
+  btn.style.color = perm === 'granted' ? '#4ade80' : '#c0392b'
+}
+if (Notification.permission === 'granted') {
+  const btn = document.getElementById('ds-notif-btn')
+  if (btn) btn.style.color = '#4ade80'
+}
+</script>

@@ -1,6 +1,8 @@
 ---
 export const prerender = false
+import '../../styles/global.css'
 import { createServerClient, parseCookieHeader } from '@supabase/ssr'
+import Sidebar from '../../components/dashboard/Sidebar.astro'
 
 const supabase = createServerClient(
   import.meta.env.PUBLIC_SUPABASE_URL,
@@ -39,6 +41,16 @@ const cats = (categories ?? []).map(c => ({
 const lowStock = cats.flatMap(c => c.products)
   .filter(p => p.stock !== null && p.stock <= (p.low_stock_alert ?? 5) && p.is_available)
 
+// ← Solo para las cifras del sidebar (recaudado hoy / en curso) —
+// misma cuenta que dashboard/index.astro, ver ahí para el detalle.
+const { data: ordersForStats } = await supabase
+  .from('orders').select('status, total, created_at').eq('business_id', business.id).limit(50)
+const allOrdersForStats = ordersForStats ?? []
+const todayStr = new Date().toDateString()
+const todaySales = allOrdersForStats.filter(o => new Date(o.created_at).toDateString() === todayStr).reduce((s,o) => s + Number(o.total), 0)
+const todayOrdersCount = allOrdersForStats.filter(o => new Date(o.created_at).toDateString() === todayStr).length
+const activeOrdersCount = allOrdersForStats.filter(o => o.status === 'pending' || o.status === 'confirmed' || o.status === 'ready').length
+
 const formatPrice = n => new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n)
 const initials = business.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()
 const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
@@ -54,29 +66,31 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --bg-deep:       #050204;
-      --bg-body:       #0A0608;
-      --bg-surface:    #140A10;
-      --bg-hover:      #1C1018;
-      --text-1:        #FAF6F0;
-      --text-2:        #C4A882;
-      --text-3:        #7A5840;
-      --accent:        #B04030;
-      --accent-dim:    rgba(176,64,48,0.12);
-      --accent-border: rgba(176,64,48,0.28);
-      --border:        rgba(250,246,240,0.07);
-      --danger:        #f87171;
+      --bg-deep:       var(--color-fog-dash-bg);
+      --bg-body:       var(--color-fog-dash-bg);
+      --bg-surface:    var(--color-fog-dash-panel);
+      --bg-hover:      var(--color-fog-dash-panel);
+      --text-1:        var(--color-fog-dash-text);
+      --text-2:        var(--color-fog-dash-muted);
+      --text-3:        var(--color-fog-dash-muted);
+      --accent:        var(--color-fog-brasa);
+      --accent-dim:    rgba(199,85,31,0.12);
+      --accent-border: rgba(199,85,31,0.28);
+      --border:        var(--color-fog-dash-border);
+      --danger:        #c0392b;
       --danger-dim:    rgba(248,113,113,0.1);
       --danger-border: rgba(248,113,113,0.25);
-      --success:       #4ade80;
+      --success:       #2d7a4a;
     }
     body{background:var(--bg-body);color:var(--text-1);font-family:'Inter',sans-serif;min-height:100vh;font-size:16px}
 
-    .embers{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
-    .ember{position:absolute;border-radius:50%;background:var(--accent);opacity:0;bottom:-5px;box-shadow:0 0 6px 2px rgba(176,64,48,0.4);animation:ember-rise linear infinite}
-    @keyframes ember-rise{0%{opacity:0;transform:translateY(0) scale(0.5)}10%{opacity:0.7}70%{opacity:0.45}100%{opacity:0;transform:translateY(-80vh) translateX(var(--drift)) scale(1.2)}}
-
-    .topbar{background:var(--bg-deep);border-bottom:1px solid var(--accent-border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:64px;position:sticky;top:0;z-index:10}
+    .dash-layout{display:flex;min-height:100vh}
+    @media(max-width:900px){.dash-layout{flex-direction:column}}
+    .dash-content-wrap{flex:1;min-width:0;padding:28px 32px 48px}
+    @media(max-width:640px){.dash-content-wrap{padding:20px 16px 32px}}
+    .dc-top-links{display:flex;justify-content:flex-end;gap:16px;margin-bottom:12px}
+    .dc-top-links a{font-size:13px;color:var(--text-3);text-decoration:none}
+    .dc-top-links a:hover{color:var(--text-2)}
 
     .pending-payment-banner{
       background:var(--danger-dim);border-bottom:1px solid var(--danger-border);
@@ -89,21 +103,8 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
       font-size:13px;color:var(--text-1);font-family:'Inter',sans-serif;
     }
     .pending-pay-info strong{color:var(--text-3);font-weight:600;margin-right:4px}
-    .logo-sm{width:38px;height:38px;border-radius:10px;background:var(--accent-dim);border:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:15px;font-weight:700;color:var(--accent);overflow:hidden}
-    .logo-sm img{width:100%;height:100%;object-fit:cover}
-    .biz-name{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700;color:var(--text-1)}
-    .biz-sub{font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:1.2px;margin-top:1px}
-    .topbar-right{display:flex;align-items:center;gap:12px}
-    .topbar-link{font-size:13px;color:var(--text-3);text-decoration:none}
-    .topbar-link:hover{color:var(--text-2)}
-    .logout-btn{background:none;border:none;color:var(--text-3);cursor:pointer;font-size:13px;font-family:'Inter',sans-serif}
-    .logout-btn:hover{color:var(--text-2)}
 
-    .dash-nav{background:var(--bg-deep);border-bottom:1px solid var(--border);padding:0 24px;display:flex;gap:4px}
-    .dash-nav a{display:inline-block;padding:14px 16px;font-size:15px;font-weight:500;color:var(--text-2);text-decoration:none;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s}
-    .dash-nav a.active,.dash-nav a:hover{color:var(--accent);border-bottom-color:var(--accent)}
-
-    .main{max-width:960px;margin:0 auto;padding:24px;position:relative;z-index:1}
+    .main{max-width:960px;margin:0 auto;padding:0;position:relative;z-index:1}
 
     .alert-box{background:var(--danger-dim);border:1px solid var(--danger-border);border-radius:14px;padding:16px 20px;margin-bottom:24px;display:flex;align-items:flex-start;gap:14px}
     .alert-title{font-size:14px;font-weight:600;color:var(--danger);margin-bottom:5px}
@@ -140,7 +141,7 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
       background:none;color:var(--text-3);border:1px solid var(--border);
       border-radius:8px;padding:9px 14px;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif;
     }
-    .cancel-btn:hover{color:var(--text-2);border-color:rgba(250,246,240,0.15)}
+    .cancel-btn:hover{color:var(--text-2);border-color:rgba(0,0,0,0.2)}
 
     .add-category-section{
       background:var(--bg-surface);border:1px dashed var(--accent-border);border-radius:14px;
@@ -162,14 +163,14 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
       grid-template-columns:110px 1fr auto auto auto auto;
       align-items:center;gap:16px;transition:border-color 0.15s;
     }
-    .product-row:hover{border-color:rgba(250,246,240,0.12)}
+    .product-row:hover{border-color:rgba(0,0,0,0.15)}
     .product-row.low-stock{border-color:var(--danger-border);background:rgba(248,113,113,0.04)}
     .product-row.out-of-stock{opacity:0.5}
 
     .prod-img-wrap{width:110px;height:110px;border-radius:12px;overflow:hidden;flex-shrink:0;position:relative;cursor:pointer;background:var(--bg-deep)}
     .prod-img{width:100%;height:100%;object-fit:cover;display:block}
-    .prod-img-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(176,64,48,0.25);border-radius:12px;transition:border-color 0.15s}
-    .prod-img-placeholder:hover{border-color:rgba(176,64,48,0.5)}
+    .prod-img-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(199,85,31,0.25);border-radius:12px;transition:border-color 0.15s}
+    .prod-img-placeholder:hover{border-color:rgba(199,85,31,0.5)}
     .img-overlay{position:absolute;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.15s;border-radius:9px;cursor:pointer}
     .prod-img-wrap:hover .img-overlay{opacity:1}
     .img-input{display:none}
@@ -183,7 +184,7 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     .toggle-sw::after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:white;transition:transform 0.2s}
     .toggle-sw.on{background:#4ade80}
     .toggle-sw.on::after{transform:translateX(14px)}
-    .toggle-sw.off{background:rgba(250,246,240,0.15)}
+    .toggle-sw.off{background:var(--color-fog-dash-border)}
 
     .stock-ctrl{display:flex;align-items:center;gap:7px;white-space:nowrap}
     .stock-label{font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px}
@@ -340,28 +341,11 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
 
     .upload-toast{position:fixed;bottom:24px;right:24px;background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;font-size:14px;color:var(--text-1);z-index:100;display:none;font-family:'Inter',sans-serif}
   </style>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 </head>
-<body>
-  <div class="embers" aria-hidden="true">
-    <span class="ember" style="left:8%;width:5px;height:5px;animation-duration:7s;animation-delay:0s;--drift:25px"></span>
-    <span class="ember" style="left:40%;width:4px;height:4px;animation-duration:10s;animation-delay:1.5s;--drift:-20px"></span>
-    <span class="ember" style="left:75%;width:5px;height:5px;animation-duration:9s;animation-delay:0.3s;--drift:22px"></span>
-  </div>
-
-  <header class="topbar">
-    <div style="display:flex;align-items:center;gap:14px">
-      <div class="logo-sm">{business.logo_url ? <img src={business.logo_url} alt=""/> : initials}</div>
-      <div>
-        <p class="biz-name">{business.name}</p>
-        <p class="biz-sub">Gestión de menú</p>
-      </div>
-    </div>
-    <div class="topbar-right">
-      <a href={`/${business.slug}`} target="_blank" class="topbar-link">Ver tienda ↗</a>
-      <button class="logout-btn" onclick="handleLogout()">Salir</button>
-    </div>
-  </header>
+<body data-surface="dashboard">
+<div class="dash-layout">
+  <Sidebar business={business} activeNav="menu" todaySales={todaySales} todayOrdersCount={todayOrdersCount} activeOrdersCount={activeOrdersCount} />
+  <div class="dash-content-wrap">
 
   {business.subscription_status !== 'active' && (
     <div class="pending-payment-banner">
@@ -380,13 +364,10 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     </div>
   )}
 
-  <nav class="dash-nav">
-    <a href="/dashboard">Pedidos</a>
-    <a href="/dashboard/menu" class="active">Menú</a>
-    <a href="/dashboard/reportes">Reportes</a>
-  </nav>
-
   <main class="main">
+    <div class="dc-top-links">
+      <a href={`/${business.slug}`} target="_blank">Ver tienda ↗</a>
+    </div>
     <div class="identity-card">
       <p class="identity-title">Identidad del negocio</p>
       <div class="identity-grid">
@@ -414,7 +395,7 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
                   </div>
                 </>
               : <label class="cover-empty-state" for="cover-input" style="cursor:pointer">
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(176,64,48,0.4)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(199,85,31,0.4)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
                   <p>Foto del local — click para subir</p>
                 </label>
             }
@@ -568,7 +549,7 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
               <div class="prod-img-wrap" onclick={`triggerUpload('${product.id}')`}>
                 {product.image_url
                   ? <><img src={product.image_url} class="prod-img" alt={product.name}/><div class="img-overlay"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></div></>
-                  : <div class="prod-img-placeholder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(176,64,48,0.4)" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></div>
+                  : <div class="prod-img-placeholder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(199,85,31,0.4)" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></div>
                 }
                 <input class="img-input" id={`img-${product.id}`} type="file" accept="image/*" onchange={`uploadPhoto('${product.id}', this)`}/>
               </div>
@@ -632,12 +613,15 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
 
   <div class="upload-toast" id="toast"></div>
   <div id="menu-cfg" data-bid={business.id} data-url={supabaseUrl} data-lat={business.latitude ?? ''} data-lng={business.longitude ?? ''} data-slug={business.slug} hidden/>
+  </div>
+</div>
 </body>
 
-<script is:inline src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 import { createBrowserClient } from '@supabase/ssr'
 import QRCode from 'qrcode'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
 const sb = createBrowserClient(
   import.meta.env.PUBLIC_SUPABASE_URL,
@@ -863,8 +847,6 @@ async function deleteCategory(id, btn) {
   window.location.reload()
 }
 
-window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
-
 window.uploadLogo = async (input) => {
   const file = input.files?.[0]
   if (!file) return
@@ -1064,8 +1046,8 @@ let locationMap = null
 let locationMarker = null
 
 function makeLocationIcon() {
-  return window.L.divIcon({
-    html: `<div style="width:16px;height:16px;border-radius:50%;background:#B04030;border:2px solid #FAF6F0;box-shadow:0 0 0 5px rgba(176,64,48,0.25)"></div>`,
+  return L.divIcon({
+    html: `<div style="width:16px;height:16px;border-radius:50%;background:#C7551F;border:2px solid #FFFFFF;box-shadow:0 0 0 5px rgba(199,85,31,0.25)"></div>`,
     className: '', iconAnchor: [8, 8]
   })
 }
@@ -1078,7 +1060,7 @@ function placeMarker(lat, lng) {
   if (locationMarker) {
     locationMarker.setLatLng([lat, lng])
   } else {
-    locationMarker = window.L.marker([lat, lng], { icon: makeLocationIcon(), draggable: true }).addTo(locationMap)
+    locationMarker = L.marker([lat, lng], { icon: makeLocationIcon(), draggable: true }).addTo(locationMap)
     locationMarker.on('dragend', () => {
       const pos = locationMarker.getLatLng()
       updateCoordsDisplay(pos.lat, pos.lng)
@@ -1095,8 +1077,8 @@ function initLocationMap() {
   const startLat = hasExisting ? existingLat : 28.6353
   const startLng = hasExisting ? existingLng : -106.0889
 
-  locationMap = window.L.map('location-map', { zoomControl: true }).setView([startLat, startLng], hasExisting ? 16 : 13)
-  window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  locationMap = L.map('location-map', { zoomControl: true }).setView([startLat, startLng], hasExisting ? 16 : 13)
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '© OpenStreetMap, © CARTO', maxZoom: 19
   }).addTo(locationMap)
 

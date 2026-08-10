@@ -1,0 +1,75 @@
+---
+// Chip visual de ETA (tiempo + distancia). Es solo presentación —
+// recibe minutos/km ya calculados por quien lo use (ruta real vía
+// OSRM, o el tiempo de preparación cuando no hay ruta que mostrar).
+
+interface Props {
+  minutes: number
+  // ← Sin km no hay distancia real que mostrar (p.ej. cayó al tiempo
+  // de preparación) — el chip se ajusta a solo minutos en ese caso.
+  km?: number
+  direction: 'pickup' | 'delivery'
+  variant?: 'compact' | 'detailed'
+}
+
+const { minutes, km, direction, variant = 'compact' } = Astro.props
+
+const label = direction === 'pickup' ? 'AL RESTAURANTE' : 'A DOMICILIO'
+const hasKm = typeof km === 'number'
+const kmLabel = hasKm ? km.toLocaleString('es-MX', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : null
+---
+
+<div class={`eta-chip eta-chip-${variant}`}>
+  <div class="eta-icon" aria-hidden="true">
+    {direction === 'pickup'
+      ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+      : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+    }
+  </div>
+
+  {variant === 'compact' ? (
+    <div class="eta-body">
+      <span class="eta-label">{direction === 'pickup' ? 'TU TIEMPO AL RESTAURANTE' : 'TIEMPO ESTIMADO'}</span>
+      <span class="eta-combined">{minutes} min{hasKm && <> · {kmLabel} km</>}</span>
+    </div>
+  ) : (
+    <div class="eta-cols">
+      <div class="eta-col">
+        <span class="eta-label">{label}</span>
+        <span class="eta-value">{minutes} <em>min</em></span>
+      </div>
+      {hasKm && (
+        <div class="eta-col eta-col-right">
+          <span class="eta-label">DISTANCIA</span>
+          <span class="eta-value">{kmLabel} <em>km</em></span>
+        </div>
+      )}
+    </div>
+  )}
+</div>
+
+<style>
+  .eta-chip{
+    display:flex;align-items:center;gap:12px;
+    background:rgba(199,85,31,0.07);border:1px solid rgba(199,85,31,0.18);
+    border-radius:10px;padding:10px 14px;
+  }
+  .eta-icon{
+    width:28px;height:28px;border-radius:50%;flex-shrink:0;
+    background:rgba(199,85,31,0.14);color:#C7551F;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .eta-label{
+    display:block;font-size:10px;font-weight:700;letter-spacing:0.8px;
+    color:#8A7A62;font-family:'Inter',sans-serif;text-transform:uppercase;
+  }
+  .eta-body{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .eta-combined{
+    font-family:'Cormorant Garamond',serif;font-size:17px;color:#1C1208;
+  }
+  .eta-cols{flex:1;display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .eta-col{display:flex;flex-direction:column;gap:3px}
+  .eta-col-right{align-items:flex-end}
+  .eta-value{font-family:'Cormorant Garamond',serif;font-size:20px;color:#1C1208}
+  .eta-value em{font-style:normal;font-size:13px;color:#8A7A62;margin-left:2px}
+</style>

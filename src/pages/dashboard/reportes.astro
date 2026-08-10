@@ -1,6 +1,8 @@
 ---
 export const prerender = false
+import '../../styles/global.css'
 import { createServerClient, parseCookieHeader } from '@supabase/ssr'
+import Sidebar from '../../components/dashboard/Sidebar.astro'
 
 const supabase = createServerClient(
   import.meta.env.PUBLIC_SUPABASE_URL,
@@ -81,7 +83,15 @@ const topProducts = [...productMap.entries()]
   .slice(0, 5)
 
 const formatPrice = (n) => new Intl.NumberFormat('es-MX', { style:'currency', currency:'MXN' }).format(n)
-const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase()
+// ← Solo para las cifras del sidebar (recaudado hoy / en curso) — la
+// consulta de arriba solo trae pedidos entregados, no sirve para esto.
+const { data: ordersForStats } = await supabase
+  .from('orders').select('status, total, created_at').eq('business_id', business.id).limit(50)
+const allOrdersForStats = ordersForStats ?? []
+const todayStr = new Date().toDateString()
+const sidebarTodaySales = allOrdersForStats.filter(o => new Date(o.created_at).toDateString() === todayStr).reduce((s,o) => s + Number(o.total), 0)
+const sidebarTodayCount = allOrdersForStats.filter(o => new Date(o.created_at).toDateString() === todayStr).length
+const sidebarActiveCount = allOrdersForStats.filter(o => o.status === 'pending' || o.status === 'confirmed' || o.status === 'ready').length
 ---
 
 <!doctype html>
@@ -95,45 +105,29 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg-deep:       #050204;
-      --bg-body:       #0A0608;
-      --bg-surface:    #140A10;
-      --bg-hover:      #1C1018;
-      --text-1:        #FAF6F0;
-      --text-2:        #C4A882;
-      --text-3:        #7A5840;
-      --accent:        #B04030;
-      --accent-dim:    rgba(176,64,48,0.12);
-      --accent-border: rgba(176,64,48,0.28);
-      --border:        rgba(250,246,240,0.07);
+      --bg-deep:       var(--color-fog-dash-bg);
+      --bg-body:       var(--color-fog-dash-bg);
+      --bg-surface:    var(--color-fog-dash-panel);
+      --bg-hover:      var(--color-fog-dash-panel);
+      --text-1:        var(--color-fog-dash-text);
+      --text-2:        var(--color-fog-dash-muted);
+      --text-3:        var(--color-fog-dash-muted);
+      --accent:        var(--color-fog-brasa);
+      --accent-dim:    rgba(199,85,31,0.12);
+      --accent-border: rgba(199,85,31,0.28);
+      --border:        var(--color-fog-dash-border);
     }
     body { background: var(--bg-body); color: var(--text-1); font-family: 'Inter', sans-serif; min-height: 100vh; font-size: 16px; }
 
-    .embers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
-    .ember { position: absolute; border-radius: 50%; background: var(--accent); opacity: 0; bottom: -5px; box-shadow: 0 0 6px 2px rgba(176,64,48,0.4); animation: ember-rise linear infinite; }
-    @keyframes ember-rise {
-      0% { opacity: 0; transform: translateY(0) scale(0.5); }
-      10% { opacity: 0.7; } 70% { opacity: 0.45; }
-      100% { opacity: 0; transform: translateY(-80vh) translateX(var(--drift)) scale(1.2); }
-    }
+    .dash-layout { display: flex; min-height: 100vh; }
+    @media (max-width: 900px) { .dash-layout { flex-direction: column; } }
+    .dash-content-wrap { flex: 1; min-width: 0; padding: 28px 32px 48px; }
+    @media (max-width: 640px) { .dash-content-wrap { padding: 20px 16px 32px; } }
+    .dc-top-links { display: flex; justify-content: flex-end; gap: 16px; margin-bottom: 12px; }
+    .dc-top-links a, .dc-top-links button { font-size: 13px; color: var(--text-3); text-decoration: none; background: none; border: none; cursor: pointer; font-family: 'Inter', sans-serif; }
+    .dc-top-links a:hover, .dc-top-links button:hover { color: var(--text-2); }
 
-    .topbar { background: var(--bg-deep); border-bottom: 1px solid var(--accent-border); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 64px; position: sticky; top: 0; z-index: 10; }
-    .topbar-left { display: flex; align-items: center; gap: 14px; }
-    .logo-sm { width: 38px; height: 38px; border-radius: 10px; background: var(--accent-dim); border: 1px solid var(--accent-border); display: flex; align-items: center; justify-content: center; font-family: 'Cormorant Garamond', serif; font-size: 15px; font-weight: 700; color: var(--accent); overflow: hidden; }
-    .logo-sm img { width: 100%; height: 100%; object-fit: cover; }
-    .biz-name { font-family: 'Cormorant Garamond', serif; font-size: 19px; font-weight: 700; color: var(--text-1); }
-    .biz-sub  { font-size: 12px; color: var(--text-3); text-transform: uppercase; letter-spacing: 1.2px; margin-top: 1px; }
-    .topbar-right { display: flex; align-items: center; gap: 12px; }
-    .topbar-link { font-size: 13px; color: var(--text-3); text-decoration: none; }
-    .topbar-link:hover { color: var(--text-2); }
-    .logout-btn { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 13px; font-family: 'Inter', sans-serif; }
-    .logout-btn:hover { color: var(--text-2); }
-
-    .dash-nav { background: var(--bg-deep); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; gap: 4px; }
-    .dash-nav a { display: inline-block; padding: 14px 16px; font-size: 15px; font-weight: 500; color: var(--text-2); text-decoration: none; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; }
-    .dash-nav a.active, .dash-nav a:hover { color: var(--accent); border-bottom-color: var(--accent); }
-
-    .main { max-width: 960px; margin: 0 auto; padding: 24px; position: relative; z-index: 1; }
+    .main { max-width: 960px; margin: 0 auto; padding: 0; position: relative; z-index: 1; }
 
     /* Stats */
     .stats-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-bottom: 24px; }
@@ -158,7 +152,7 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
       transition: background 0.2s;
       position: relative; min-height: 3px;
     }
-    .bar:hover { background: rgba(176,64,48,0.28); }
+    .bar:hover { background: rgba(199,85,31,0.28); }
     .bar-value {
       position: absolute; top: -22px; left: 50%;
       transform: translateX(-50%);
@@ -196,63 +190,42 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     /* Estilos de impresión */
     @media print {
       body{background:#fff !important;color:#1a1a1a !important;font-size:13px}
-      .embers,.topbar,.dash-nav,.print-btn{display:none !important}
+      .dash-sidebar,.dc-top-links,.print-btn{display:none !important}
       .main{padding:0;max-width:100%}
       .stat-card{background:#f9f9f9 !important;border:1px solid #ddd !important;break-inside:avoid}
       .stat-period{color:#666 !important}
-      .stat-amount{color:#B04030 !important}
+      .stat-amount{color:#C7551F !important}
       .stat-count,.stat-avg{color:#444 !important}
       .section{background:#f9f9f9 !important;border:1px solid #ddd !important;break-inside:avoid;page-break-inside:avoid}
       .section-title{color:#1a1a1a !important}
-      .bar{background:#f2d5d0 !important;border:1px solid #B04030 !important;opacity:1}      
+      .bar{background:#f2d5d0 !important;border:1px solid #C7551F !important;opacity:1}      
       .top-name{color:#1a1a1a !important}
       .top-rank{color:#999 !important}
-      .top-rank.gold{color:#B04030 !important}
+      .top-rank.gold{color:#C7551F !important}
       .top-qty{color:#555 !important}
-      .top-revenue{color:#B04030 !important}
-      .progress-fill{background:#B04030 !important}
+      .top-revenue{color:#C7551F !important}
+      .progress-fill{background:#C7551F !important}
       .progress-bar{background:#eee !important}
       .top-product{border-bottom-color:#eee !important}
       .print-header{display:block !important}
     }
     .print-header{display:none;margin-bottom:24px}
-    .print-header h1{font-family:'Cormorant Garamond',serif;font-size:24px;color:#B04030}
+    .print-header h1{font-family:'Cormorant Garamond',serif;font-size:24px;color:#C7551F}
     .print-header p{font-size:12px;color:#888;margin-top:4px}
 
     .empty p { font-family: 'Cormorant Garamond', serif; font-size: 18px; color: var(--text-2); margin-top: 10px; }
   </style>
 </head>
 
-<body>
-  <div class="embers" aria-hidden="true">
-    <span class="ember" style="left:8%;width:5px;height:5px;animation-duration:7s;animation-delay:0s;--drift:25px"></span>
-    <span class="ember" style="left:35%;width:4px;height:4px;animation-duration:10s;animation-delay:1.5s;--drift:-20px"></span>
-    <span class="ember" style="left:65%;width:5px;height:5px;animation-duration:9s;animation-delay:0.3s;--drift:22px"></span>
-    <span class="ember" style="left:88%;width:4px;height:4px;animation-duration:11s;animation-delay:2s;--drift:-15px"></span>
+<body data-surface="dashboard">
+<div class="dash-layout">
+  <Sidebar business={business} activeNav="reportes" todaySales={sidebarTodaySales} todayOrdersCount={sidebarTodayCount} activeOrdersCount={sidebarActiveCount} />
+  <div class="dash-content-wrap">
+
+  <div class="dc-top-links">
+    <button class="print-btn" onclick="window.print()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Imprimir / PDF</button>
+    <a href={`/${business.slug}`} target="_blank">Ver tienda ↗</a>
   </div>
-
-  <header class="topbar">
-    <div class="topbar-left">
-      <div class="logo-sm">
-        {business.logo_url ? <img src={business.logo_url} alt="" /> : initials}
-      </div>
-      <div>
-        <p class="biz-name">{business.name}</p>
-        <p class="biz-sub">Reportes de ventas</p>
-      </div>
-    </div>
-    <div class="topbar-right">
-      <button class="print-btn" onclick="window.print()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Imprimir / PDF</button>
-      <a href={`/${business.slug}`} target="_blank" class="topbar-link">Ver tienda ↗</a>
-      <button class="logout-btn" onclick="handleLogout()">Salir</button>
-    </div>
-  </header>
-
-  <nav class="dash-nav">
-    <a href="/dashboard">Pedidos</a>
-    <a href="/dashboard/menu">Menú</a>
-    <a href="/dashboard/reportes" class="active">Reportes</a>
-  </nav>
 
   <main class="main">
     <div class="print-header">
@@ -336,6 +309,8 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
   </main>
 
   <div id="reportes-cfg" data-bid={business.id} hidden></div>
+  </div>
+</div>
 </body>
 
 <script>
@@ -344,7 +319,6 @@ const initials = business.name.split(' ').map(w => w[0]).slice(0,2).join('').toU
     import.meta.env.PUBLIC_SUPABASE_URL,
     import.meta.env.PUBLIC_SUPABASE_ANON_KEY
   )
-  window.handleLogout = async () => { await sb.auth.signOut(); window.location.href = '/login' }
 
   // ── Alerta de pedido nuevo (sonido + notificación) ──
   // Pedidos/Menú/Reportes son páginas completas separadas — si no

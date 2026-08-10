@@ -14,13 +14,13 @@ export const prerender = false
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --bg-body:#0A0608;
-      --bg-surface:#140A10;
-      --text-1:#FAF6F0;
-      --text-2:#C4A882;
-      --text-3:#7A5840;
-      --accent:#B04030;
-      --border:rgba(250,246,240,0.08);
+      --bg-body:var(--color-fog-bg);
+      --bg-surface:var(--color-fog-panel);
+      --text-1:var(--color-fog-text);
+      --text-2:var(--color-fog-muted);
+      --text-3:var(--color-fog-muted);
+      --accent:var(--color-fog-brasa);
+      --border:var(--color-fog-border);
     }
     body{background:var(--bg-body);color:var(--text-1);font-family:'Inter',sans-serif;line-height:1.7}
     nav{display:flex;align-items:center;padding:22px 24px;max-width:720px;margin:0 auto}
@@ -30,8 +30,8 @@ export const prerender = false
     h1{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:36px;margin-bottom:8px}
     .updated{color:var(--text-3);font-size:13px;margin-bottom:40px}
     h2{font-size:19px;font-weight:700;margin:36px 0 12px;color:var(--text-1)}
-    p{color:var(--text-2);font-size:15px;margin-bottom:14px}
-    ul{color:var(--text-2);font-size:15px;margin:0 0 14px 20px}
+    p{color:var(--color-fog-text);font-size:15px;margin-bottom:14px}
+    ul{color:var(--color-fog-text);font-size:15px;margin:0 0 14px 20px}
     li{margin-bottom:8px}
     strong{color:var(--text-1)}
     a{color:var(--accent)}

@@ -7,5 +7,11 @@ export default defineConfig({
   adapter: netlify(),
   vite: {
     plugins: [tailwindcss()],
+    optimizeDeps: {
+      include: ['leaflet', 'qrcode', '@supabase/supabase-js', '@supabase/ssr'],
+    },
+    ssr: {
+      noExternal: ['leaflet', 'qrcode'],
+    },
   },
 });
