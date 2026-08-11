@@ -1,0 +1,44 @@
+---
+export interface Props {
+  active?: 'faq'
+}
+const { active } = Astro.props
+---
+<nav class="fogon-nav">
+  <a class="nav-logo" href="/">
+    <img src="/fogon-sello.svg" alt="Fogón"/>
+    Fogón
+  </a>
+  <div class="nav-right">
+    <a class="nav-link" href="/faq" aria-current={active === 'faq' ? 'page' : undefined}>FAQ</a>
+    <a class="nav-login" href="/login">Iniciar sesión</a>
+    <a class="nav-cta" href="/registro">Crear mi negocio</a>
+  </div>
+</nav>
+
+<style>
+  .fogon-nav{
+    display:flex;align-items:center;flex-wrap:wrap;row-gap:10px;
+    padding:22px 24px;max-width:1040px;margin:0 auto;
+  }
+  .nav-logo{display:flex;align-items:center;gap:10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:clamp(24px,6vw,30px);font-weight:700;color:var(--color-fog-text);text-decoration:none}
+  .nav-logo img{height:1.5em;width:auto;flex-shrink:0}
+  .nav-right{display:flex;align-items:center;flex-wrap:wrap;gap:18px;margin-left:auto}
+  .nav-link{color:var(--color-fog-muted);text-decoration:none;font-size:14px;font-weight:600;white-space:nowrap}
+  .nav-link:hover{color:var(--color-fog-text)}
+  .nav-link[aria-current="page"]{color:var(--color-fog-brasa)}
+  .nav-login{color:var(--color-fog-muted);text-decoration:none;font-size:14px;font-weight:600;white-space:nowrap}
+  .nav-login:hover{color:var(--color-fog-text)}
+  .nav-cta{
+    background:none;color:var(--color-fog-muted);border:1px solid var(--color-fog-border);
+    border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;
+    text-decoration:none;white-space:nowrap;transition:border-color 0.15s,color 0.15s;
+  }
+  .nav-cta:hover{border-color:rgba(199,85,31,0.25);color:var(--color-fog-brasa)}
+  @media(max-width:480px){
+    .fogon-nav{padding:18px 18px}
+    .nav-right{gap:10px}
+    .nav-link,.nav-login{font-size:13px}
+    .nav-cta{padding:8px 14px;font-size:13px}
+  }
+</style>

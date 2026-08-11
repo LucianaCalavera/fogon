@@ -1,6 +1,7 @@
 ---
 export const prerender = false
 import '../styles/global.css'
+import Header from '../components/Header.astro'
 import EtaChip from '../components/ui/EtaChip.astro'
 
 // ← Vitrina de marketing, no un pedido real — no hay ruta ni dirección
@@ -73,29 +74,6 @@ const demoEta = { minutes: 22, km: 3.4 }
       font-family:'Inter',sans-serif;transition:opacity 0.15s;
     }
     .btn-primary:hover{opacity:0.9}
-
-    /* ── Nav ──────────────────────────────────────── */
-    nav{
-      display:flex;align-items:center;flex-wrap:wrap;row-gap:10px;
-      padding:22px 24px;max-width:1040px;margin:0 auto;
-    }
-    .nav-logo{display:flex;align-items:center;gap:10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:clamp(24px,6vw,30px);font-weight:700;color:var(--text);text-decoration:none}
-    .nav-logo img{height:1.5em;width:auto;flex-shrink:0}
-    .nav-right{display:flex;align-items:center;flex-wrap:wrap;gap:18px;margin-left:auto}
-    .nav-login{color:var(--muted);text-decoration:none;font-size:14px;font-weight:600;white-space:nowrap}
-    .nav-login:hover{color:var(--text)}
-    .nav-cta{
-      background:none;color:var(--muted);border:1px solid var(--border);
-      border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;
-      text-decoration:none;white-space:nowrap;transition:border-color 0.15s,color 0.15s;
-    }
-    .nav-cta:hover{border-color:var(--accent-border);color:var(--accent)}
-    @media(max-width:480px){
-      nav{padding:18px 18px}
-      .nav-right{gap:10px}
-      .nav-login{font-size:13px}
-      .nav-cta{padding:8px 14px;font-size:13px}
-    }
 
     /* ── Hero ─────────────────────────────────────── */
     .hero{padding-top:40px;padding-bottom:28px;text-align:center}
@@ -207,16 +185,7 @@ const demoEta = { minutes: 22, km: 3.4 }
 </head>
 <body>
 
-  <nav>
-    <a class="nav-logo" href="/">
-      <img src="/fogon-sello.svg" alt="Fogón"/>
-      Fogón
-    </a>
-    <div class="nav-right">
-      <a class="nav-login" href="/login">Iniciar sesión</a>
-      <a class="nav-cta" href="/registro">Crear mi negocio</a>
-    </div>
-  </nav>
+  <Header/>
 
   <!-- ── Hero + comparación ───────────────────────── -->
   <header class="hero wrap">
