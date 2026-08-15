@@ -25,8 +25,8 @@ const nextOpenText = nextOpenLabel(business.open_time)
 
 const hasTransferOption = !!(business.payment_clabe || business.payment_phone || business.payment_codi_qr_url)
 
-// ← DOMICILIO: si no hay valor guardado (negocios viejos antes de
-// esta columna), asumimos true para no quitarle la opción a nadie.
+// DOMICILIO: si no hay valor guardado (negocios viejos antes de
+// esta columna), se asume true para no quitarle la opción a nadie.
 const hasDelivery = business.offers_delivery !== false
 
 const { data: categories } = await supabase
@@ -49,8 +49,8 @@ const hasSocials = business.instagram_url || business.facebook_url || business.t
 const hasInfo = (business.open_time && business.close_time) || business.whatsapp_number || hasSocials
 
 // ETA inicial del checkout (recoger) — sin geolocalización del cliente
-// en esta pantalla (esa solo se pide, pasiva, en /pedido/[id]), así
-// que arrancamos mostrando el tiempo de preparación. El chip se
+// en esta pantalla (esa solo se pide, pasiva, en /pedido/[id]), por lo
+// que se muestra inicialmente el tiempo de preparación. El chip se
 // recalcula en el cliente cuando cambian entre Recoger/Domicilio.
 const initialEta = { minutes: DEFAULT_PREP_MINUTES }
 ---
@@ -354,7 +354,7 @@ const initialEta = { minutes: DEFAULT_PREP_MINUTES }
     .type-btn.off{border:0.5px solid rgba(28,18,8,0.08);background:transparent;color:rgba(28,18,8,0.3)}
     .eta-chip-slot{margin-bottom:10px}
 
-    /* ← Campos de dirección de domicilio: mismo look que los demás
+    /* Campos de dirección de domicilio: mismo look que los demás
        inputs del checkout, ocultos hasta que elijan "Domicilio". */
     .delivery-fields{display:none;flex-direction:column;margin-top:2px}
     .delivery-address-hint{font-size:11.5px;color:rgba(28,18,8,0.35);margin:-4px 0 8px 2px;font-family:'Inter',sans-serif}
@@ -598,7 +598,7 @@ const initialEta = { minutes: DEFAULT_PREP_MINUTES }
           <button id="btn-delivery" class="type-btn off" onclick="setType('delivery')">🛵 Domicilio</button>
         )}
       </div>
-      <!-- ← Campos de domicilio: solo se muestran (y se vuelven
+      <!-- Campos de domicilio: solo se muestran (y se vuelven
            obligatorios) cuando el cliente elige "Domicilio". -->
       <div class="delivery-fields" id="delivery-fields">
         <input class="form-input" id="delivery-address" type="text" placeholder="Calle y número, colonia *"/>
@@ -871,7 +871,7 @@ window.closeModal = () => { document.getElementById('modal-overlay').style.displ
 window.handleOverlayClick = (e) => { if (e.target.id === 'modal-overlay') closeModal() }
 
 window.setType = (type) => {
-  // ← Solo se puede pasar a 'delivery' si el negocio lo ofrece —
+  // Solo se puede pasar a 'delivery' si el negocio lo ofrece —
   // aunque el botón no exista en el HTML, esto es un segundo seguro.
   if (type === 'delivery' && !hasDelivery) return
 
@@ -884,8 +884,8 @@ window.setType = (type) => {
   if (deliveryFields) deliveryFields.style.display = type === 'delivery' ? 'flex' : 'none'
 
   if (type === 'pickup') {
-    // ← Sin geolocalización del cliente en el checkout (esa solo se
-    // pide, pasiva, en /pedido/[id]) — mostramos el tiempo de
+    // Sin geolocalización del cliente en el checkout (esa solo se
+    // pide, pasiva, en /pedido/[id]) — se muestra el tiempo de
     // preparación mientras tanto.
     setFallbackEta('pickup')
   } else {
@@ -926,7 +926,7 @@ function setFallbackEta(type) {
   renderEtaChipSlot(type, currentEta)
 }
 
-// ← Domicilio: ruta real restaurante → dirección tecleada, vía OSRM.
+// Domicilio: ruta real restaurante → dirección tecleada, vía OSRM.
 // Se dispara mientras el cliente escribe (con debounce) y cae al
 // tiempo de preparación si falta la dirección, no se pudo
 // geocodificar, o no hay coordenadas del restaurante.
@@ -976,7 +976,7 @@ window.handleSubmit = async () => {
   
   if (!name) { errEl.textContent = 'Escribe tu nombre'; errEl.style.display = 'block'; return }
 
- // ← Si eligieron domicilio, la dirección es obligatoria — sin ella
+  // Si eligieron domicilio, la dirección es obligatoria — sin ella
   // el negocio no tiene forma de saber a dónde llevar el pedido.
   let deliveryData = null
   if (orderType === 'delivery') {
@@ -998,7 +998,7 @@ window.handleSubmit = async () => {
   
   try {
     const orderId = crypto.randomUUID()
-    // ← Solo guardamos un ETA de domicilio si currentEta trae una ruta
+    // Solo se guarda un ETA de domicilio si currentEta trae una ruta
     // real (km viene de OSRM) — si se quedó en el fallback de tiempo
     // de preparación, no hay nada real que persistir.
     const hasRealEta = orderType === 'delivery' && typeof currentEta.km === 'number'

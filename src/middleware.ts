@@ -21,12 +21,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Proteger rutas del dashboard
+  // Protege las rutas del dashboard
   if (context.url.pathname.startsWith('/dashboard') && !user) {
     return context.redirect('/login')
   }
 
-  // Si ya está logueado y va al login, redirigir al dashboard
+  // Si ya está logueado y va al login, lo redirige al dashboard
   if (context.url.pathname === '/login' && user) {
     return context.redirect('/dashboard')
   }

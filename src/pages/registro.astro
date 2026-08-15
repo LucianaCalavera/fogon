@@ -196,7 +196,7 @@ import '../styles/global.css'
         }
 
         // Inicia sesión en el navegador (esto es lo que pone la cookie
-        // que el dashboard necesita para reconocerte como dueño)
+        // que el dashboard necesita para identificar al dueño del negocio)
         const { error: signInError } = await sb.auth.signInWithPassword({ email, password })
         if (signInError) {
           showError('Tu cuenta se creó, pero hubo un problema al iniciar sesión. Ve a /login')

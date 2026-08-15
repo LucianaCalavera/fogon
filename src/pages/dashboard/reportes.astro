@@ -83,7 +83,7 @@ const topProducts = [...productMap.entries()]
   .slice(0, 5)
 
 const formatPrice = (n) => new Intl.NumberFormat('es-MX', { style:'currency', currency:'MXN' }).format(n)
-// ← Solo para las cifras del sidebar (recaudado hoy / en curso) — la
+// Solo para las cifras del sidebar (recaudado hoy / en curso) — la
 // consulta de arriba solo trae pedidos entregados, no sirve para esto.
 const { data: ordersForStats } = await supabase
   .from('orders').select('status, total, created_at').eq('business_id', business.id).limit(50)
@@ -321,9 +321,9 @@ const sidebarActiveCount = allOrdersForStats.filter(o => o.status === 'pending' 
   )
 
   // ── Alerta de pedido nuevo (sonido + notificación) ──
-  // Pedidos/Menú/Reportes son páginas completas separadas — si no
-  // repetimos esta suscripción aquí también, la alerta solo suena
-  // mientras estás parado en la pestaña de Pedidos.
+  // Pedidos/Menú/Reportes son páginas completas separadas — sin esta
+  // suscripción repetida aquí también, la alerta solo sonaría
+  // mientras el usuario está en la pestaña de Pedidos.
   const reportesCfg = document.getElementById('reportes-cfg')
   const orderAlertBid = reportesCfg.dataset.bid
 

@@ -25,8 +25,8 @@ const ownerPhone = import.meta.env.FOGON_OWNER_PHONE ?? ''
 const ownerBankName = import.meta.env.FOGON_OWNER_BANK_NAME ?? ''
 if (!business) return Astro.redirect('/login')
 
-// ← DOMICILIO: si no hay valor guardado (negocios viejos antes de
-// esta columna), asumimos true para no quitarle la opción a nadie.
+// DOMICILIO: si no hay valor guardado (negocios viejos antes de
+// esta columna), se asume true para no quitarle la opción a nadie.
 const offersDelivery = business.offers_delivery !== false
 
 const { data: categories } = await supabase
@@ -41,7 +41,7 @@ const cats = (categories ?? []).map(c => ({
 const lowStock = cats.flatMap(c => c.products)
   .filter(p => p.stock !== null && p.stock <= (p.low_stock_alert ?? 5) && p.is_available)
 
-// ← Solo para las cifras del sidebar (recaudado hoy / en curso) —
+// Solo para las cifras del sidebar (recaudado hoy / en curso) —
 // misma cuenta que dashboard/index.astro, ver ahí para el detalle.
 const { data: ordersForStats } = await supabase
   .from('orders').select('status, total, created_at').eq('business_id', business.id).limit(50)
@@ -312,7 +312,7 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
     .field-input::placeholder{color:var(--text-3)}
     .save-contact-btn{margin-top:18px;background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border);border-radius:8px;padding:9px 18px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background 0.15s,color 0.15s}
 
-    /* ← Toggle de domicilio: mismo patrón visual que el de
+    /* Toggle de domicilio: mismo patrón visual que el de
        disponible/agotado en los productos, pero para el negocio. */
     .delivery-toggle-row{
       display:flex;align-items:center;justify-content:space-between;gap:14px;
@@ -440,7 +440,7 @@ const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL
         </div>
         <button class="save-contact-btn" onclick="saveContact()">Guardar</button>
 
-        <!-- ← Toggle de servicio a domicilio -->
+        <!-- Toggle de servicio a domicilio -->
         <div class="delivery-toggle-row">
           <div>
             <p class="delivery-toggle-text">🛵 Servicio a domicilio</p>
@@ -987,7 +987,7 @@ window.saveContact = async () => {
   toast('¡Datos guardados!')
 }
 
-// ← Servicio a domicilio: mismo patrón que toggleAvail, pero
+// Servicio a domicilio: mismo patrón que toggleAvail, pero
 // actualizando businesses.offers_delivery en vez de un producto.
 window.toggleDelivery = async (current) => {
   const cfg = document.getElementById('menu-cfg')

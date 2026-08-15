@@ -7,8 +7,8 @@
 const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving'
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search'
 
-// Fogón solo opera en Chihuahua, Chih. por ahora — anclamos ahí la
-// geocodificación (viewbox+bounded=1) para que direcciones cortas
+// Fogón solo opera en Chihuahua, Chih. por ahora — la geocodificación
+// se ancla ahí (viewbox+bounded=1) para que direcciones cortas
 // como "Emilia Miller #306" (sin ciudad/estado) sí resuelvan, en vez
 // de que Nominatim las busque en cualquier parte del mundo y falle.
 // west,north,east,south — cubre la mancha urbana con margen.

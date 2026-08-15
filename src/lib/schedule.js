@@ -4,11 +4,11 @@
 // La usan tanto la tienda pública ([slug].astro) como el dashboard
 // (dashboard/index.astro) para que nunca se desincronicen.
 //
-// IMPORTANTE: siempre calcula con la hora de America/Chihuahua, sin
-// importar en qué zona horaria corra el servidor. Netlify ejecuta sus
-// funciones en UTC — sin esto, una vez deployado, el horario que ve
-// el cliente quedaría desfasado varias horas del que de verdad aplica
-// el trigger de la base de datos (que sí usa Chihuahua correctamente).
+// Siempre calcula con la hora de America/Chihuahua, sin importar en
+// qué zona horaria corra el servidor: Netlify ejecuta sus funciones en
+// UTC, y sin este ajuste el horario que ve el cliente quedaría
+// desfasado varias horas del que de verdad aplica el trigger de la
+// base de datos (que sí usa Chihuahua correctamente).
 
 function getCurrentMinutes(timeZone = 'America/Chihuahua') {
   const now = new Date()

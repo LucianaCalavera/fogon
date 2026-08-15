@@ -48,7 +48,7 @@ const readyOrders = allOrders.filter(o => o.status === 'ready')
 const doneOrders = allOrders.filter(o => o.status === 'delivered' || o.status === 'cancelled')
 const activeOrdersCount = pendingOrders.length + confirmedOrders.length + readyOrders.length
 
-// ← Se manda aparte (no dentro del objeto `order` que ya viaja en el
+// Se manda aparte (no dentro del objeto `order` que ya viaja en el
 // HTML de cada tarjeta) porque el cliente lo necesita como dato puro
 // para inicializar el mapa Leaflet, no para renderizarlo con Astro.
 const routeGeometryByOrder = Object.fromEntries(
@@ -58,7 +58,7 @@ const routeGeometryByOrder = Object.fromEntries(
 const formatPrice = (n) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n)
 const formatTime = (ts) => new Date(ts).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
 
-// ← El dashboard no pide geolocalización (quien mira esta pantalla es
+// El dashboard no pide geolocalización (quien mira esta pantalla es
 // el negocio, no el cliente) — el ETA real de ambos tipos de pedido se
 // calcula del lado del cliente (checkout para Domicilio, /pedido/[id]
 // para Recoger) y queda guardado en el pedido. Si no hay uno guardado

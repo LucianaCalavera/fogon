@@ -1,7 +1,7 @@
 // src/lib/flame-canvas.js
 //
 // Anima la llama de partículas (chispas, brasas, humo) sobre un
-// <canvas id="fogonCanvas" width="200" height="280">. La armamos
+// <canvas id="fogonCanvas" width="200" height="280">. Se construyó
 // originalmente para /registro; ahora también la usa la landing,
 // así que vive en un solo lugar para no mantener dos copias.
 //

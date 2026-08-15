@@ -15,7 +15,7 @@ const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') || 'mailto:hola@inannadevweb
 
 // Valores reales de la columna `status` en `orders` (ver dashboard/index.astro):
 // pending → confirmed → ready → delivered, con cancelled disponible antes de ready.
-// Solo notificamos en 'ready' — es el momento en que el cliente debe actuar
+// Solo se notifica en 'ready' — es el momento en que el cliente debe actuar
 // (ir a recoger, o esperar a que llegue si es domicilio).
 const NOTIFY_ON_STATUS = new Set(['ready'])
 
@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
           payloadStr
         ).catch(async (err) => {
           // 404/410 = la suscripción ya no existe (navegador desinstalado,
-          // permiso revocado, etc.) — la limpiamos para no reintentar en vano.
+          // permiso revocado, etc.) — se elimina para no reintentar en vano.
           if (err.statusCode === 404 || err.statusCode === 410) {
             await supabase.from('push_subscriptions').delete().eq('id', sub.id)
           }

@@ -1,14 +1,14 @@
 export const prerender = false
 
-// IMPORTANTE: este endpoint necesita la Service Role Key de Supabase
-// (Project Settings → API → service_role), NO la anon key.
-// Debe guardarse como variable de entorno SIN el prefijo PUBLIC_,
-// para que nunca se incluya en el bundle del navegador:
+// Este endpoint requiere la Service Role Key de Supabase (Project
+// Settings → API → service_role), no la anon key. Se guarda como
+// variable de entorno sin el prefijo PUBLIC_, para que nunca se
+// incluya en el bundle del navegador:
 //
 //   SUPABASE_SERVICE_ROLE_KEY=eyJ...
 //
-// En Netlify: Site settings → Environment variables → agregar esa key.
-// En local: agregarla a tu .env (y confirmar que .env esté en .gitignore).
+// En Netlify se define en Site settings → Environment variables; en
+// local, en el archivo .env (excluido de git vía .gitignore).
 
 import { createClient } from '@supabase/supabase-js'
 
@@ -62,7 +62,7 @@ export async function POST({ request }) {
       return new Response(JSON.stringify({ error: 'La contraseña debe tener al menos 8 caracteres' }), { status: 400 })
     }
 
-    // 1. Crear el usuario. email_confirm:true lo activa de inmediato,
+    // 1. Creación del usuario. email_confirm:true lo activa de inmediato,
     //    sin esperar correo de verificación — clave para que el alta
     //    de un founder no se trabe en su bandeja de spam.
     const { data: userData, error: userError } = await supabaseAdmin.auth.admin.createUser({
@@ -71,7 +71,7 @@ export async function POST({ request }) {
 
     if (userError) {
       console.error('registro: createUser error →', userError)
-      // No revelamos si la causa fue "correo ya existe" u otra cosa —
+      // No se revela si la causa fue "correo ya existe" u otra cosa —
       // decirlo abiertamente permite enumerar qué correos están
       // registrados en Fogón. El mensaje sirve igual para ambos casos.
       return new Response(JSON.stringify({
@@ -82,7 +82,7 @@ export async function POST({ request }) {
     // 2. Slug único a partir del nombre del negocio
     const slug = await getUniqueSlug(businessName)
 
-    // 3. Crear el negocio, ligado al nuevo usuario
+    // 3. Creación del negocio, ligado al nuevo usuario
     const { data: business, error: bizError } = await supabaseAdmin
       .from('businesses')
       .insert({
@@ -99,7 +99,7 @@ export async function POST({ request }) {
 
     if (bizError) {
       console.error('registro: businesses insert error →', bizError)
-      // No dejamos un usuario huérfano sin negocio si algo falla aquí.
+      // No se deja un usuario huérfano sin negocio si algo falla aquí.
       await supabaseAdmin.auth.admin.deleteUser(userData.user.id)
       return new Response(JSON.stringify({ error: `No se pudo crear el negocio: ${bizError.message}` }), { status: 500 })
     }
@@ -109,7 +109,7 @@ export async function POST({ request }) {
     // Cualquier excepción inesperada (ej. la Service Role Key mal
     // puesta, o no configurada) cae aquí — antes esto se le escapaba
     // al try/catch y el navegador recibía una página de error en HTML
-    // en vez de JSON, por eso veías "no se pudo conectar".
+    // en vez de JSON, lo que se traducía en "no se pudo conectar".
     console.error('registro: error inesperado →', err)
     return new Response(JSON.stringify({ error: `Error inesperado: ${err.message}` }), { status: 500 })
   }

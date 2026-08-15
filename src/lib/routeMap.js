@@ -7,7 +7,7 @@ import L from 'leaflet'
 export function renderRouteMap(containerId, coordinates, { interactive = false, zoomControl = interactive } = {}) {
   const latlngs = coordinates.map(([lng, lat]) => [lat, lng])
 
-  // ← El mini-mapa colapsable del dashboard no es "interactive" (sin
+  // El mini-mapa colapsable del dashboard no es "interactive" (sin
   // scroll-zoom, para no pelear con el scroll de la página al pasar el
   // cursor encima), pero sí tiene sus propios controles +/- (zoomControl)
   // y debe poder arrastrarse igual que el mapa grande — por eso dragging/

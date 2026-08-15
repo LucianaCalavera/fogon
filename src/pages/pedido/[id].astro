@@ -20,10 +20,10 @@ const orderType = tracking?.order_type ?? 'pickup'
 const initialStatus = tracking?.status ?? 'pending'
 const orderShortId = id ? id.slice(-6).toUpperCase() : '000'
 
-// ← PAGOS: si venimos del checkout con transferencia, [slug].astro
-// nos pasa estos datos por la URL para armar el link de WhatsApp
-// aquí — evita la pelea entre window.open() y la redirección que
-// fallaba antes.
+// PAGOS: cuando el pedido viene del checkout con transferencia,
+// [slug].astro pasa estos datos por la URL para armar el link de
+// WhatsApp aquí, evitando la pelea entre window.open() y la
+// redirección que fallaba antes.
 const waNumber = Astro.url.searchParams.get('wa')
 const waAmount = Astro.url.searchParams.get('amt')
 const waOrderNum = Astro.url.searchParams.get('num')
@@ -39,7 +39,7 @@ const waMessage = waNumber
   : ''
 const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(waMessage)}` : null
 
-// ← El slug viene directo por la URL desde [slug].astro al crear el
+// El slug viene directo por la URL desde [slug].astro al crear el
 // pedido (mismo patrón que wa/amt/num) — no depende de que
 // order_status_public tenga business_id, que es lo que fallaba antes.
 let businessSlug = Astro.url.searchParams.get('slug') || null
@@ -54,7 +54,7 @@ if (!businessSlug && !notFound && tracking?.business_id) {
   businessSlug = biz?.slug ?? null
 }
 
-// ← Domicilio calcula y guarda la ruta real (restaurante → dirección)
+// Domicilio calcula y guarda la ruta real (restaurante → dirección)
 // con OSRM en el checkout. Recoger no puede hacer eso ahí (no hay
 // geolocalización del cliente en el checkout) — la calcula y guarda
 // esta misma pantalla, del lado del cliente, la primera vez que se
@@ -65,19 +65,19 @@ const eta = hasStoredEta
   ? { minutes: tracking.eta_minutes, km: tracking.eta_km }
   : { minutes: DEFAULT_PREP_MINUTES }
 
-// ← Mismo criterio que hasStoredEta: solo hay ruta que dibujar si ya
+// Mismo criterio que hasStoredEta: solo hay ruta que dibujar si ya
 // quedó guardada (en el checkout para domicilio, o en una visita
 // anterior a esta pantalla para recoger). Se muestra siempre visible
 // aquí (a diferencia del dashboard) porque el cliente solo ve su
 // propio pedido.
 const routeGeometry = tracking?.eta_route_geometry ?? null
 
-// ← Coordenadas del restaurante para el ETA real de "Recoger" (ruta
-// cliente → restaurante), calculado en el navegador una vez que
-// tengamos la geolocalización del cliente. La ubicación del negocio
+// Coordenadas del restaurante para el ETA real de "Recoger" (ruta
+// cliente → restaurante), calculado en el navegador una vez que se
+// obtiene la geolocalización del cliente. La ubicación del negocio
 // es pública (ya se muestra en el mapa de la tienda), así que
 // consultarla aquí no rompe ninguna barrera de privacidad. No hace
-// falta si ya tenemos un ETA guardado de una visita anterior.
+// falta si ya existe un ETA guardado de una visita anterior.
 let businessCoords = null
 if (orderType === 'pickup' && businessSlug && !hasStoredEta) {
   const { data: biz } = await supabase
@@ -199,7 +199,7 @@ if (orderType === 'pickup' && businessSlug && !hasStoredEta) {
       {routeGeometry ? (
         <div class="route-map" id="route-map"></div>
       ) : (orderType === 'pickup' && businessCoords) && (
-        // ← Sin ruta guardada todavía, pero sí podríamos calcularla en
+        // Sin ruta guardada todavía, pero sí es posible calcularla en
         // el navegador (más abajo, con la geolocalización del
         // cliente) — el contenedor se renderiza aquí, oculto, en vez
         // de crearlo por JS: un <div> creado con document.createElement
@@ -261,7 +261,7 @@ if (orderType === 'pickup' && businessSlug && !hasStoredEta) {
       import { renderRouteMap } from '../../lib/routeMap'
       import 'leaflet/dist/leaflet.css'
 
-      // ← El servidor ya renderizó #route-map oculto cuando hay chance
+      // El servidor ya renderizó #route-map oculto cuando hay chance
       // de que Recoger calcule una ruta aquí (ver frontmatter) — no se
       // crea por JS: un <div> creado con document.createElement no
       // lleva el atributo data-astro-cid-* que Astro usa para
@@ -277,7 +277,7 @@ if (orderType === 'pickup' && businessSlug && !hasStoredEta) {
 
       const cfg = document.getElementById('track-cfg')
 
-      // ← Mapa siempre visible (no colapsado, a diferencia del
+      // Mapa siempre visible (no colapsado, a diferencia del
       // dashboard) porque esta pantalla es del cliente y solo muestra
       // su propio pedido — no hay varias tarjetas que saturar.
       const routeGeometryEl = document.getElementById('route-geometry-data')
@@ -298,10 +298,10 @@ if (orderType === 'pickup' && businessSlug && !hasStoredEta) {
           try {
             await navigator.share({ title: `Mi pedido ${orderNum} — Fogón`, url })
             return
-          } catch (e) { /* canceló el share, no hacemos nada */ return }
+          } catch (e) { /* canceló el share, no se hace nada */ return }
         }
 
-        // En escritorio (sin share nativo): copiamos el link.
+        // En escritorio (sin share nativo): se copia el link.
         try {
           await navigator.clipboard.writeText(url)
           const original = btn.textContent
@@ -317,14 +317,14 @@ if (orderType === 'pickup' && businessSlug && !hasStoredEta) {
       const businessId = cfg.dataset.businessId
       const businessSlug = cfg.dataset.businessSlug
 
-      // ← Recoger: pedimos la ubicación del navegador de forma pasiva
+      // Recoger: solicita la ubicación del navegador de forma pasiva
       // (una sola vez, sin explicarle nada antes ni insistir después)
       // para mostrar la ruta real cliente → restaurante, igual que
       // Domicilio calcula restaurante → dirección en el checkout. Si
       // ya hay un ETA guardado de una visita anterior (hasStoredEta),
       // no hace falta volver a pedir permiso ni recalcular — SSR ya
       // mostró el chip y el mapa arriba. Si el permiso se niega, no
-      // está disponible, o no tenemos las coordenadas del restaurante,
+      // está disponible, o faltan las coordenadas del restaurante,
       // el chip se queda tal cual quedó renderizado en el servidor
       // (tiempo de preparación).
       const bizLat = parseFloat(cfg.dataset.bizLat ?? '')
@@ -366,7 +366,7 @@ if (orderType === 'pickup' && businessSlug && !hasStoredEta) {
         )
       }
 
-      // El pedido ya terminó (entregado o cancelado) — borramos el
+      // El pedido ya terminó (entregado o cancelado) — se borra el
       // aviso de "pedido reciente" de la tienda para que no se quede
       // apuntando a algo que ya no aplica.
       function clearRecentOrder() {
@@ -455,9 +455,9 @@ if (orderType === 'pickup' && businessSlug && !hasStoredEta) {
           const back = document.getElementById('back-link')
           if (back) { back.classList.add('back-link-cta'); back.textContent = '🍽️ Hacer otro pedido' }
 
-          // Regresamos solos a la tienda después de unos segundos —
-          // así no se queda la pantalla "muerta" esperando a que el
-          // cliente sepa que tiene que volver él mismo.
+          // Redirige de vuelta a la tienda automáticamente después de
+          // unos segundos — así no se queda la pantalla "muerta"
+          // esperando a que el cliente sepa que tiene que volver él mismo.
           if (businessSlug) {
             let secondsLeft = 8
             const countdown = document.getElementById('redirect-countdown')
@@ -496,8 +496,8 @@ if (orderType === 'pickup' && businessSlug && !hasStoredEta) {
       setStep(initialStatus)
 
       // ── Tiempo real ──────────────────────────────
-      // OJO: el filtro es por order_id, NO por id — ese fue el bug
-      // que hizo que nunca llegara la actualización al cliente.
+      // El filtro es por order_id, no por id: usar id causaba que la
+      // actualización nunca llegara al cliente.
       sb.channel(`order-track-${orderId}`)
         .on('postgres_changes', {
           event: 'UPDATE', schema: 'public', table: 'order_status_public',
